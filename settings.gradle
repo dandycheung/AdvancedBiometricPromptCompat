@@ -17,5 +17,5 @@
  *   limitations under the License.
  */
 
-rootProject.name = "biometric"
-include ":app", ":biometric", ":biometric-api", ":common"
+//rootProject.name = "biometric"
+include /*":app",*/ ":biometric", ":biometric-api", ":common"

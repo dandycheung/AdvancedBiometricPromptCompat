@@ -29,16 +29,16 @@ dependencies {
     implementation 'com.jakewharton.rxrelay2:rxrelay:2.1.1'
     implementation "androidx.window:window:1.0.0-alpha05"
 }
-dependencyCheck {
-    failOnError = false
-}
-afterEvaluate {
-    android.libraryVariants.all { v ->
-        if (v.buildType.name == "release") {
-            v.assemble.finalizedBy(dependencyCheckAnalyze)
-        }
-    }
-}
+//dependencyCheck {
+//    failOnError = false
+//}
+//afterEvaluate {
+//    android.libraryVariants.all { v ->
+//        if (v.buildType.name == "release") {
+//            v.assemble.finalizedBy(dependencyCheckAnalyze)
+//        }
+//    }
+//}
 /*
  *  Copyright (c) 2021 Sergey Komlach aka Salat-Cx65; Original project: https://github.com/Salat-Cx65/AdvancedBiometricPromptCompat
  *  All rights reserved.
@@ -57,59 +57,59 @@ afterEvaluate {
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
-
-// Generate Source Jar
-task sourceJar(type: Jar) {
-    from android.sourceSets.main.java.srcDirs
-    classifier "sources"
-}
-
-// Create the publication with the pom configuration
-publishing {
-    publications {
-        // Create different publications for every build types (debug and release)
-        android.buildTypes.all { variant ->
-            // Dynamically creating publications name
-            "${variant.name}Aar"(MavenPublication) {
-
-                // Artifact properties
-                groupId libsGroupId
-                version = libVersion
-                artifactId libArtifactId_common
-
-                // Tell maven to prepare the generated "*.aar" file for publishing
-                artifact("$buildDir/outputs/aar/${artifactId}-${variant.name}.aar")
-
-                pom.withXml {
-
-                    //Creating additional node for dependencies
-                    def dependenciesNode = asNode().appendNode('dependencies')
-
-                    //Defining configuration names from which dependencies will be taken (debugCompile or releaseCompile and compile)
-                    def configurationNames = ["${variant.name}Implementation", 'implementation']
-
-                    configurationNames.each { configurationName ->
-                        configurations[configurationName].allDependencies.each {
-                            if (it.version != null && it.version != 'unspecified') {
-                                def dependencyNode = dependenciesNode.appendNode('dependency')
-                                dependencyNode.appendNode('groupId', it.group)
-                                dependencyNode.appendNode('artifactId', it.name)
-                                dependencyNode.appendNode('version', it.version)
-
-                                //If there are any exclusions in dependency
-                                if (it.excludeRules.size() > 0) {
-                                    def exclusionsNode = dependencyNode.appendNode('exclusions')
-                                    it.excludeRules.each { rule ->
-                                        def exclusionNode = exclusionsNode.appendNode('exclusion')
-                                        exclusionNode.appendNode('groupId', rule.group)
-                                        exclusionNode.appendNode('artifactId', rule.module)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+//
+//// Generate Source Jar
+//task sourceJar(type: Jar) {
+//    from android.sourceSets.main.java.srcDirs
+//    classifier "sources"
+//}
+//
+//// Create the publication with the pom configuration
+//publishing {
+//    publications {
+//        // Create different publications for every build types (debug and release)
+//        android.buildTypes.all { variant ->
+//            // Dynamically creating publications name
+//            "${variant.name}Aar"(MavenPublication) {
+//
+//                // Artifact properties
+//                groupId libsGroupId
+//                version = libVersion
+//                artifactId libArtifactId_common
+//
+//                // Tell maven to prepare the generated "*.aar" file for publishing
+//                artifact("$buildDir/outputs/aar/${artifactId}-${variant.name}.aar")
+//
+//                pom.withXml {
+//
+//                    //Creating additional node for dependencies
+//                    def dependenciesNode = asNode().appendNode('dependencies')
+//
+//                    //Defining configuration names from which dependencies will be taken (debugCompile or releaseCompile and compile)
+//                    def configurationNames = ["${variant.name}Implementation", 'implementation']
+//
+//                    configurationNames.each { configurationName ->
+//                        configurations[configurationName].allDependencies.each {
+//                            if (it.version != null && it.version != 'unspecified') {
+//                                def dependencyNode = dependenciesNode.appendNode('dependency')
+//                                dependencyNode.appendNode('groupId', it.group)
+//                                dependencyNode.appendNode('artifactId', it.name)
+//                                dependencyNode.appendNode('version', it.version)
+//
+//                                //If there are any exclusions in dependency
+//                                if (it.excludeRules.size() > 0) {
+//                                    def exclusionsNode = dependencyNode.appendNode('exclusions')
+//                                    it.excludeRules.each { rule ->
+//                                        def exclusionNode = exclusionsNode.appendNode('exclusion')
+//                                        exclusionNode.appendNode('groupId', rule.group)
+//                                        exclusionNode.appendNode('artifactId', rule.module)
+//                                    }
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
