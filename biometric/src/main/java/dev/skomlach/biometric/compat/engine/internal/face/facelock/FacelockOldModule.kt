@@ -25,6 +25,7 @@ import android.content.pm.PackageManager
 import android.view.View
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.BiometricCodes
 import dev.skomlach.biometric.compat.engine.BiometricInitListener
@@ -153,11 +154,12 @@ class FacelockOldModule(private var listener: BiometricInitListener?) :
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         try {
             d("$name: Facelock call authorize")
-            authorize(ProxyListener(restartPredicate, cancellationSignal, listener))
+            authorize(ProxyListener(restartPredicate, cancellationSignal, listener, biometricCryptoObject))
             return
         } catch (e: Throwable) {
             e(e, "$name: authenticate failed unexpectedly")
@@ -182,7 +184,8 @@ class FacelockOldModule(private var listener: BiometricInitListener?) :
     inner class ProxyListener(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) {
         fun onAuthenticationError(errMsgId: Int, errString: CharSequence?): Void? {
             var failureReason = AuthenticationFailureReason.UNKNOWN
@@ -218,7 +221,7 @@ class FacelockOldModule(private var listener: BiometricInitListener?) :
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -236,7 +239,7 @@ class FacelockOldModule(private var listener: BiometricInitListener?) :
         }
 
         fun onAuthenticationSucceeded(result: Any?): Void? {
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
             return null
         }
 

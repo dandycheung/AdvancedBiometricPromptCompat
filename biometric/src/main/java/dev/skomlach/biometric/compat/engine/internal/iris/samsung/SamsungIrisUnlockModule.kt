@@ -24,6 +24,7 @@ import android.view.View
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
 import com.samsung.android.camera.iris.SemIrisManager
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.AuthenticationHelpReason
 import dev.skomlach.biometric.compat.engine.BiometricCodes
@@ -91,13 +92,14 @@ class SamsungIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         manager?.let {
             try {
                 val callback: SemIrisManager.AuthenticationCallback =
-                    AuthCallback(restartPredicate, cancellationSignal, listener)
+                    AuthCallback(restartPredicate, cancellationSignal, listener, biometricCryptoObject)
 
                 // Why getCancellationSignalObject returns an Object is unexplained
                 val signalObject =
@@ -125,7 +127,8 @@ class SamsungIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
     internal inner class AuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : SemIrisManager.AuthenticationCallback() {
         override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
             d(name + ".onAuthenticationError: " + getErrorCode(errMsgId) + "-" + errString)
@@ -160,7 +163,7 @@ class SamsungIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -179,7 +182,7 @@ class SamsungIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
 
         override fun onAuthenticationSucceeded(result: SemIrisManager.AuthenticationResult?) {
             d("$name.onAuthenticationSucceeded: $result")
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
         }
 
         override fun onAuthenticationFailed() {

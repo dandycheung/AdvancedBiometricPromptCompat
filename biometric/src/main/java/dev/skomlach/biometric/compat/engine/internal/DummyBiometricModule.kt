@@ -21,6 +21,7 @@ package dev.skomlach.biometric.compat.engine.internal
 
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.BiometricInitListener
 import dev.skomlach.biometric.compat.engine.BiometricMethod
@@ -50,7 +51,8 @@ class DummyBiometricModule(listener: BiometricInitListener?) :
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         ExecutorHelper.INSTANCE.handler.postDelayed({

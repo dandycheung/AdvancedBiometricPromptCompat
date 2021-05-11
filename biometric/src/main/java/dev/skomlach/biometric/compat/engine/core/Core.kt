@@ -21,6 +21,7 @@ package dev.skomlach.biometric.compat.engine.core
 
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.core.interfaces.AuthenticationListener
 import dev.skomlach.biometric.compat.engine.core.interfaces.BiometricModule
 import dev.skomlach.biometric.compat.engine.core.interfaces.RestartPredicate
@@ -89,17 +90,19 @@ object Core {
     @JvmOverloads
     fun authenticate(
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate? = RestartPredicatesImpl.defaultPredicate()
+        restartPredicate: RestartPredicate? = RestartPredicatesImpl.defaultPredicate(),
+        biometricCryptoObject:  BiometricCryptoObject?
     ) {
         for (module in reprintModuleHashMap.values) {
-            authenticate(module, listener, restartPredicate)
+            authenticate(module, listener, restartPredicate, biometricCryptoObject)
         }
     }
     @JvmStatic
     fun authenticate(
         module: BiometricModule,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject:  BiometricCryptoObject?
     ) {
         if (!module.isHardwarePresent || !module.hasEnrolled() || module.isLockOut) throw RuntimeException(
             "Module " + module.javaClass.simpleName + " not ready"
@@ -110,7 +113,7 @@ object Core {
         )
         cancellationSignal = CancellationSignal()
         cancellationSignals[module] = cancellationSignal
-        module.authenticate(cancellationSignal, listener, restartPredicate)
+        module.authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
     }
     @JvmStatic
     fun cancelAuthentication() {
@@ -138,7 +141,7 @@ object Core {
      * @param listener The listener that will be notified of authentication events.
      */
     @JvmStatic
-    fun authenticateWithoutRestart(listener: AuthenticationListener?) {
-        authenticate(listener, RestartPredicatesImpl.neverRestart())
+    fun authenticateWithoutRestart(listener: AuthenticationListener?, biometricCryptoObject:  BiometricCryptoObject? ) {
+        authenticate(listener, RestartPredicatesImpl.neverRestart(), biometricCryptoObject)
     }
 }

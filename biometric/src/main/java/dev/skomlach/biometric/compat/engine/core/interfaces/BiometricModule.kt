@@ -21,6 +21,7 @@ package dev.skomlach.biometric.compat.engine.core.interfaces
 
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.core.Core
 
 /**
@@ -54,7 +55,8 @@ interface BiometricModule {
     fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject:  BiometricCryptoObject?
     )
 
     /**

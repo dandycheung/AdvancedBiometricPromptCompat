@@ -24,6 +24,7 @@ import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
 import com.tencent.soter.core.biometric.BiometricManagerCompat
 import com.tencent.soter.core.model.ConstantsSoter
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.AuthenticationHelpReason
 import dev.skomlach.biometric.compat.engine.BiometricCodes
@@ -82,13 +83,14 @@ class SoterFaceUnlockModule @SuppressLint("WrongConstant") constructor(private v
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         manager?.let {
             try {
                 val callback: BiometricManagerCompat.AuthenticationCallback =
-                    AuthCallback(restartPredicate, cancellationSignal, listener)
+                    AuthCallback(restartPredicate, cancellationSignal, listener, biometricCryptoObject)
 
                 // Why getCancellationSignalObject returns an Object is unexplained
                 val signalObject =
@@ -115,7 +117,8 @@ class SoterFaceUnlockModule @SuppressLint("WrongConstant") constructor(private v
     internal inner class AuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : BiometricManagerCompat.AuthenticationCallback() {
         override fun onAuthenticationError(errMsgId: Int, errString: CharSequence) {
             d(name + ".onAuthenticationError: " + getErrorCode(errMsgId) + "-" + errString)
@@ -150,7 +153,7 @@ class SoterFaceUnlockModule @SuppressLint("WrongConstant") constructor(private v
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -169,7 +172,7 @@ class SoterFaceUnlockModule @SuppressLint("WrongConstant") constructor(private v
 
         override fun onAuthenticationSucceeded(result: BiometricManagerCompat.AuthenticationResult) {
             d("$name.onAuthenticationSucceeded: $result")
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
         }
 
         override fun onAuthenticationFailed() {

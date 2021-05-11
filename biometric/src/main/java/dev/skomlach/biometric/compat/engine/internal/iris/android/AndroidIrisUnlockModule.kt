@@ -24,6 +24,7 @@ import android.hardware.iris.IrisManager
 import android.os.Build
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.*
 import dev.skomlach.biometric.compat.engine.internal.AbstractBiometricModule
 import dev.skomlach.biometric.compat.engine.core.Core
@@ -96,13 +97,14 @@ class AndroidIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         manager?.let{
             try {
                 val callback: IrisManager.AuthenticationCallback =
-                    AuthCallback(restartPredicate, cancellationSignal, listener)
+                    AuthCallback(restartPredicate, cancellationSignal, listener, biometricCryptoObject)
 
                 // Why getCancellationSignalObject returns an Object is unexplained
                 val signalObject =
@@ -129,7 +131,8 @@ class AndroidIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
     internal inner class AuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : IrisManager.AuthenticationCallback() {
         override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
             d(name + ".onAuthenticationError: " + getErrorCode(errMsgId) + "-" + errString)
@@ -164,7 +167,7 @@ class AndroidIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -183,7 +186,7 @@ class AndroidIrisUnlockModule @SuppressLint("WrongConstant") constructor(listene
 
         override fun onAuthenticationSucceeded(result: IrisManager.AuthenticationResult?) {
             d("$name.onAuthenticationSucceeded: $result")
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
         }
 
         override fun onAuthenticationFailed() {

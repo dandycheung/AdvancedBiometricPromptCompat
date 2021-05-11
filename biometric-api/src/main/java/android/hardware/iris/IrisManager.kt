@@ -69,50 +69,42 @@ class IrisManager {
      * framework supports [Signature], [Cipher] and [Mac] objects.
      */
     class CryptoObject {
-        private val mCrypto: Any
-
-        constructor(signature: Signature) {
-            mCrypto = signature
-        }
-
-        constructor(cipher: Cipher) {
-            mCrypto = cipher
-        }
-
-        constructor(mac: Mac) {
-            mCrypto = mac
-        }
-
-        /**
-         * Get [Signature] object.
-         *
-         * @return [Signature] object or null if this doesn't contain one.
-         */
         val signature: Signature?
-            get() = if (mCrypto is Signature) mCrypto else null
-
-        /**
-         * Get [Cipher] object.
-         *
-         * @return [Cipher] object or null if this doesn't contain one.
-         */
         val cipher: Cipher?
-            get() = if (mCrypto is Cipher) mCrypto else null
-
-        /**
-         * Get [Mac] object.
-         *
-         * @return [Mac] object or null if this doesn't contain one.
-         */
         val mac: Mac?
-            get() = if (mCrypto is Mac) mCrypto else null
 
         /**
-         * @return the opId associated with this object or 0 if none
-         * @hide
+         * Creates a crypto object that wraps the given signature object.
+         *
+         * @param signature The signature to be associated with this crypto object.
          */
-        val opId: Long
-            get() = 0
+        constructor(signature: Signature) {
+            this.signature = signature
+            cipher = null
+            mac = null
+        }
+
+        /**
+         * Creates a crypto object that wraps the given cipher object.
+         *
+         * @param cipher The cipher to be associated with this crypto object.
+         */
+        constructor(cipher: Cipher) {
+            signature = null
+            this.cipher = cipher
+            mac = null
+        }
+
+        /**
+         * Creates a crypto object that wraps the given MAC object.
+         *
+         * @param mac The MAC to be associated with this crypto object.
+         */
+        constructor(mac: Mac) {
+            signature = null
+            cipher = null
+            this.mac = mac
+        }
     }
 
     /**

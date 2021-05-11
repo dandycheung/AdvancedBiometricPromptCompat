@@ -76,21 +76,21 @@ class SemBioFaceManager {
     class AuthenticationResult(val cryptoObject: CryptoObject, val face: Face)
     class CryptoObject {
         private val mCrypto: Any
-        val fidoRequestData: ByteArray
+        val fidoRequestData: ByteArray?
         var fidoResultData: ByteArray? = null
             private set
 
-        constructor(signature: Signature, bArr: ByteArray) {
+        constructor(signature: Signature, bArr: ByteArray?) {
             mCrypto = signature
             fidoRequestData = bArr
         }
 
-        constructor(cipher: Cipher, bArr: ByteArray) {
+        constructor(cipher: Cipher, bArr: ByteArray?) {
             mCrypto = cipher
             fidoRequestData = bArr
         }
 
-        constructor(mac: Mac, bArr: ByteArray) {
+        constructor(mac: Mac, bArr: ByteArray?) {
             mCrypto = mac
             fidoRequestData = bArr
         }
@@ -98,7 +98,7 @@ class SemBioFaceManager {
         val cipher: Cipher?
             get() = if (mCrypto is Cipher) mCrypto else null
 
-        private fun setFidoResultData(bArr: ByteArray) {
+        private fun setFidoResultData(bArr: ByteArray?) {
             fidoResultData = bArr
         }
 

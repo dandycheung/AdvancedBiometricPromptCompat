@@ -25,6 +25,7 @@ import android.hardware.face.FaceManager
 import android.os.Build
 import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.*
 import dev.skomlach.biometric.compat.engine.internal.AbstractBiometricModule
 import dev.skomlach.biometric.compat.engine.core.Core
@@ -140,7 +141,8 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         // Why getCancellationSignalObject returns an Object is unexplained
@@ -162,7 +164,8 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
                         FaceAuthenticationManagerAuthCallback(
                             restartPredicate,
                             cancellationSignal,
-                            listener
+                            listener,
+                            biometricCryptoObject
                         ), ExecutorHelper.INSTANCE.handler
                     )
                     return
@@ -178,7 +181,7 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
                         null,
                         signalObject,
                         0,
-                        FaceManagerAuthCallback(restartPredicate, cancellationSignal, listener),
+                        FaceManagerAuthCallback(restartPredicate, cancellationSignal, listener, biometricCryptoObject),
                         ExecutorHelper.INSTANCE.handler
                     )
                     return
@@ -194,7 +197,8 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
     internal inner class FaceManagerAuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : FaceManager.AuthenticationCallback() {
         override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
             d(name + ".onAuthenticationError: " + getErrorCode(errMsgId) + "-" + errString)
@@ -229,7 +233,7 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -248,7 +252,7 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
 
         override fun onAuthenticationSucceeded(result: FaceManager.AuthenticationResult?) {
             d("$name.onAuthenticationSucceeded: $result")
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
         }
 
         override fun onAuthenticationFailed() {
@@ -260,7 +264,8 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
     internal inner class FaceAuthenticationManagerAuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : FaceAuthenticationManager.AuthenticationCallback() {
         override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
             d(name + ".onAuthenticationError: " + getErrorCode(errMsgId) + "-" + errString)
@@ -295,7 +300,7 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {
@@ -314,7 +319,7 @@ class AndroidFaceUnlockModule @SuppressLint("WrongConstant") constructor(listene
 
         override fun onAuthenticationSucceeded(result: FaceAuthenticationManager.AuthenticationResult?) {
             d("$name.onAuthenticationSucceeded: $result")
-            listener?.onSuccess(tag())
+            listener?.onSuccess(tag(), biometricCryptoObject)
         }
 
         override fun onAuthenticationFailed() {

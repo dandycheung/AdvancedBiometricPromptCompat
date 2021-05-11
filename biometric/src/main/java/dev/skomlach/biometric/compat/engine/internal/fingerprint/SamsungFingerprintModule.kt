@@ -24,6 +24,7 @@ import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
 import com.samsung.android.sdk.pass.Spass
 import com.samsung.android.sdk.pass.SpassFingerprint
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.BiometricInitListener
 import dev.skomlach.biometric.compat.engine.BiometricMethod
@@ -83,7 +84,8 @@ class SamsungFingerprintModule(listener: BiometricInitListener?) :
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         mSpassFingerprint?.let {
@@ -93,7 +95,7 @@ class SamsungFingerprintModule(listener: BiometricInitListener?) :
                     override fun onFinished(status: Int) {
                         when (status) {
                             SpassFingerprint.STATUS_AUTHENTIFICATION_SUCCESS, SpassFingerprint.STATUS_AUTHENTIFICATION_PASSWORD_SUCCESS -> {
-                                listener?.onSuccess(tag())
+                                listener?.onSuccess(tag(), biometricCryptoObject)
                                 return
                             }
                             SpassFingerprint.STATUS_QUALITY_FAILED, SpassFingerprint.STATUS_SENSOR_FAILED -> fail(
@@ -115,7 +117,7 @@ class SamsungFingerprintModule(listener: BiometricInitListener?) :
                         var failureReason: AuthenticationFailureReason? = reason
                         if (restartPredicate?.invoke(failureReason) == true) {
                             listener?.onFailure(failureReason, tag())
-                            authenticate(cancellationSignal, listener, restartPredicate)
+                            authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
                         } else {
                             when (failureReason) {
                                 AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {

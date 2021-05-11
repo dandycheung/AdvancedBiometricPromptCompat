@@ -24,6 +24,7 @@ import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
 import com.vivo.framework.facedetect.FaceDetectManager
 import com.vivo.framework.facedetect.FaceDetectManager.FaceAuthenticationCallback
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.BiometricInitListener
 import dev.skomlach.biometric.compat.engine.BiometricMethod
@@ -80,18 +81,14 @@ class VivoFaceUnlockModule @SuppressLint("WrongConstant") constructor(listener: 
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         manager?.let{
             try {
                 val callback: FaceAuthenticationCallback =
-                    AuthCallback(restartPredicate, cancellationSignal, listener)
-
-                // Why getCancellationSignalObject returns an Object is unexplained
-                val signalObject =
-                    (if (cancellationSignal == null) null else cancellationSignal.cancellationSignalObject as android.os.CancellationSignal?)
-                        ?: throw IllegalArgumentException("CancellationSignal cann't be null")
+                    AuthCallback(restartPredicate, cancellationSignal, listener, biometricCryptoObject)
 
                 // Occasionally, an NPE will bubble up out of SemBioSomeManager.authenticate
                 it.startFaceUnlock(callback)
@@ -107,12 +104,13 @@ class VivoFaceUnlockModule @SuppressLint("WrongConstant") constructor(listener: 
     internal inner class AuthCallback(
         private val restartPredicate: RestartPredicate?,
         private val cancellationSignal: CancellationSignal?,
-        private val listener: AuthenticationListener?
+        private val listener: AuthenticationListener?,
+        private val biometricCryptoObject: BiometricCryptoObject?
     ) : FaceAuthenticationCallback() {
         override fun onFaceAuthenticationResult(errorCode: Int, retry_times: Int) {
             d("$name.onFaceAuthenticationResult: $errorCode-$retry_times")
             if (errorCode == FaceDetectManager.FACE_DETECT_SUCEESS) {
-                listener?.onSuccess(tag())
+                listener?.onSuccess(tag(), biometricCryptoObject)
                 return
             }
             var failureReason = AuthenticationFailureReason.UNKNOWN
@@ -126,7 +124,7 @@ class VivoFaceUnlockModule @SuppressLint("WrongConstant") constructor(listener: 
             }
             if (restartPredicate?.invoke(failureReason) == true) {
                 listener?.onFailure(failureReason, tag())
-                authenticate(cancellationSignal, listener, restartPredicate)
+                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
             } else {
                 when (failureReason) {
                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {

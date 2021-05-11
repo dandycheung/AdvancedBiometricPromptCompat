@@ -24,6 +24,7 @@ import androidx.annotation.RestrictTo
 import androidx.core.os.CancellationSignal
 import com.fingerprints.service.FingerprintManager
 import com.fingerprints.service.FingerprintManager.IdentifyCallback
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.BiometricInitListener
 import dev.skomlach.biometric.compat.engine.BiometricMethod
@@ -90,7 +91,8 @@ class FlymeFingerprintModule(listener: BiometricInitListener?) :
     override fun authenticate(
         cancellationSignal: CancellationSignal?,
         listener: AuthenticationListener?,
-        restartPredicate: RestartPredicate?
+        restartPredicate: RestartPredicate?,
+        biometricCryptoObject: BiometricCryptoObject?
     ) {
         d("$name.authenticate - $biometricMethod")
         if (isManagerAccessible) {
@@ -100,7 +102,7 @@ class FlymeFingerprintModule(listener: BiometricInitListener?) :
                 mFingerprintServiceFingerprintManager
                     ?.startIdentify(object : IdentifyCallback {
                         override fun onIdentified(i: Int, b: Boolean) {
-                            listener?.onSuccess(tag())
+                            listener?.onSuccess(tag(), biometricCryptoObject)
                             cancelFingerprintServiceFingerprintRequest()
                         }
 
@@ -112,7 +114,7 @@ class FlymeFingerprintModule(listener: BiometricInitListener?) :
                             var failureReason: AuthenticationFailureReason? = reason
                             if (restartPredicate?.invoke(failureReason) == true) {
                                 listener?.onFailure(failureReason, tag())
-                                authenticate(cancellationSignal, listener, restartPredicate)
+                                authenticate(cancellationSignal, listener, restartPredicate, biometricCryptoObject)
                             } else {
                                 when (failureReason) {
                                     AuthenticationFailureReason.SENSOR_FAILED, AuthenticationFailureReason.AUTHENTICATION_FAILED -> {

@@ -19,23 +19,25 @@
 
 package com.example.myapplication
 
-import android.graphics.Color
+import android.os.Build
+import android.util.Base64
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.fragment.app.Fragment
-import dev.skomlach.biometric.compat.BiometricAuthRequest
-import dev.skomlach.biometric.compat.BiometricManagerCompat
-import dev.skomlach.biometric.compat.BiometricPromptCompat
-import dev.skomlach.biometric.compat.BiometricType
+import dev.skomlach.biometric.compat.*
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl
 
+private var encrypted: EncryptedData? = null
+private val decrypted: String = "Test text"
+private var initializationVector: ByteArray? = null
+
+@RequiresApi(Build.VERSION_CODES.M)
 fun Fragment.startBiometric(biometricAuthRequest: BiometricAuthRequest) {
     if (!BiometricManagerCompat.hasEnrolled(biometricAuthRequest)) {
         BiometricManagerCompat.openSettings(requireActivity(), biometricAuthRequest)
         return
     }
-    val start = System.currentTimeMillis()
-    BiometricLoggerImpl.e("CheckBiometric.start() for $biometricAuthRequest")
     val biometricPromptCompat = BiometricPromptCompat.Builder(
         biometricAuthRequest,
         requireActivity()
@@ -44,31 +46,53 @@ fun Fragment.startBiometric(biometricAuthRequest: BiometricAuthRequest) {
         .setNegativeButton("Cancel", null)
         .build()
 
-    val context = activity?.applicationContext
-    biometricPromptCompat.authenticate(object : BiometricPromptCompat.Result {
-        override fun onSucceeded(confirmed : Set<BiometricType>) {
-            BiometricLoggerImpl.e("CheckBiometric.onSucceeded() for $confirmed")
-            Toast.makeText(context, "Succeeded - $confirmed", Toast.LENGTH_SHORT).show()
-        }
+    val context = activity?.applicationContext?:return
+    val cipher = if (encrypted == null) {
+        BiometricCryptoObject(CryptographyManagerImpl.manager.getInitializedCipherForEncryption("myKey123"))
+    } else {
+        BiometricCryptoObject(CryptographyManagerImpl.manager.getInitializedCipherForDecryption("myKey123", initializationVector!!))
+    }
 
-        override fun onCanceled() {
-            BiometricLoggerImpl.e("CheckBiometric.onCanceled()")
-            Toast.makeText(context, "Canceled", Toast.LENGTH_SHORT).show()
-        }
+    biometricPromptCompat.authenticate(
+        object : BiometricPromptCompat.Result {
+            override fun onSucceeded(confirmed: Map<BiometricType, BiometricCryptoObject?>) {
+                BiometricLoggerImpl.e("CheckBiometric.onSucceeded() for $confirmed")
+                val biometricType: BiometricType = confirmed.keys.toList()[0]
+                confirmed[biometricType]?.let {
+                    encrypted = if (encrypted == null) {
+                        val s = CryptographyManagerImpl.manager.encryptData(decrypted, it.cipher!!)//IllegalBlockSize on MIUI
+                        initializationVector = s.initializationVector
+                        Toast.makeText(context, "Succeeded ${Base64.encode(s.ciphertext, Base64.DEFAULT)}", Toast.LENGTH_SHORT).show()
+                        s
+                    } else {
+                        val s = CryptographyManagerImpl.manager.decryptData(encrypted?.ciphertext!!, it.cipher!!)
+                        Toast.makeText(context, "Succeeded '${s == decrypted}'/'$s'", Toast.LENGTH_SHORT).show()
+                        null
+                    }
+                }
 
-        override fun onFailed(reason: AuthenticationFailureReason?) {
-            BiometricLoggerImpl.e("CheckBiometric.onFailed() - $reason")
-            Toast.makeText(context, "Error: $reason", Toast.LENGTH_SHORT).show()
-        }
+            }
 
-        override fun onUIOpened() {
-            BiometricLoggerImpl.e("CheckBiometric.onUIOpened()")
-            Toast.makeText(context, "onUIOpened", Toast.LENGTH_SHORT).show()
-        }
+            override fun onCanceled() {
+                BiometricLoggerImpl.e("CheckBiometric.onCanceled()")
+                Toast.makeText(context, "Canceled", Toast.LENGTH_SHORT).show()
+            }
 
-        override fun onUIClosed() {
-            BiometricLoggerImpl.e("CheckBiometric.onUIClosed()")
-            Toast.makeText(context, "onUIClosed", Toast.LENGTH_SHORT).show()
-        }
-    })
+            override fun onFailed(reason: AuthenticationFailureReason?) {
+                BiometricLoggerImpl.e("CheckBiometric.onFailed() - $reason")
+                Toast.makeText(context, "Error: $reason", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onUIOpened() {
+                BiometricLoggerImpl.e("CheckBiometric.onUIOpened()")
+                Toast.makeText(context, "onUIOpened", Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onUIClosed() {
+                BiometricLoggerImpl.e("CheckBiometric.onUIClosed()")
+                Toast.makeText(context, "onUIClosed", Toast.LENGTH_SHORT).show()
+            }
+        },
+        cipher
+    )
 }

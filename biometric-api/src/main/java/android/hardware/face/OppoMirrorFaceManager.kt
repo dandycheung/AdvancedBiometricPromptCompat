@@ -48,11 +48,41 @@ class OppoMirrorFaceManager {
 
     class CryptoObject {
         val signature: Signature?
-            get() = null
         val cipher: Cipher?
-            get() = null
         val mac: Mac?
-            get() = null
+
+        /**
+         * Creates a crypto object that wraps the given signature object.
+         *
+         * @param signature The signature to be associated with this crypto object.
+         */
+        constructor(signature: Signature) {
+            this.signature = signature
+            cipher = null
+            mac = null
+        }
+
+        /**
+         * Creates a crypto object that wraps the given cipher object.
+         *
+         * @param cipher The cipher to be associated with this crypto object.
+         */
+        constructor(cipher: Cipher) {
+            signature = null
+            this.cipher = cipher
+            mac = null
+        }
+
+        /**
+         * Creates a crypto object that wraps the given MAC object.
+         *
+         * @param mac The MAC to be associated with this crypto object.
+         */
+        constructor(mac: Mac) {
+            signature = null
+            cipher = null
+            this.mac = mac
+        }
     }
 
     fun getEnrolledFaces(userId: Int): List<Face>? {

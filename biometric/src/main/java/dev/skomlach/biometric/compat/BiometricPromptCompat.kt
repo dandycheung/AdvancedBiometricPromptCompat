@@ -101,6 +101,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
             }
             return field
         }
+        private set
         private var isDeviceInfoChecked = false
         @MainThread
         @JvmStatic
@@ -205,7 +206,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         iBiometricPromptImpl
     }
 
-    fun authenticate(callbackOuter: Result) {
+    fun authenticate(callbackOuter: Result, biometricCryptoObject:  BiometricCryptoObject? = null) {
         if(isActivityFinished(builder.context)){
             BiometricLoggerImpl.e("Unable to start BiometricPromptCompat.authenticate() cause of Activity destroyed")
             return
@@ -230,12 +231,12 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                     callbackOuter.onFailed(AuthenticationFailureReason.INTERNAL_ERROR)
                 }
                 else
-                    startAuth(callbackOuter)
+                    startAuth(callbackOuter, biometricCryptoObject)
             }
         }
     }
 
-    private fun startAuth(callbackOuter: Result) {
+    private fun startAuth(callbackOuter: Result, biometricCryptoObject:  BiometricCryptoObject?) {
         if(isActivityFinished(builder.context)){
             BiometricLoggerImpl.e("Unable to start BiometricPromptCompat.authenticate() cause of Activity destroyed")
             callbackOuter.onFailed(AuthenticationFailureReason.INTERNAL_ERROR)
@@ -251,7 +252,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         val callback = object : Result {
 
             var isOpened = false
-            override fun onSucceeded(confirmed : Set<BiometricType>) {
+            override fun onSucceeded(confirmed : Map<BiometricType, BiometricCryptoObject?>) {
                 callbackOuter.onSucceeded(confirmed)
                 onUIClosed()
             }
@@ -326,10 +327,10 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         PermissionsFragment.askForPermissions(
             impl.builder.context,
             impl.usedPermissions
-        ) { authenticateInternal(callback) }
+        ) { authenticateInternal(callback, biometricCryptoObject) }
     }
 
-    private fun authenticateInternal(callback: Result) {
+    private fun authenticateInternal(callback: Result, biometricCryptoObject:  BiometricCryptoObject?) {
         BiometricLoggerImpl.d("BiometricPromptCompat.authenticateInternal()")
         if(isActivityFinished(builder.context)){
             BiometricLoggerImpl.e("Unable to start BiometricPromptCompat.authenticate() cause of Activity destroyed")
@@ -338,7 +339,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         }
         try {
             BiometricLoggerImpl.d("BiometricPromptCompat.authenticateInternal() - impl.authenticate")
-            impl.authenticate(callback)
+            impl.authenticate(callback, biometricCryptoObject)
         } catch (ignore: IllegalStateException) {
             callback.onFailed(AuthenticationFailureReason.INTERNAL_ERROR)
         }
@@ -382,7 +383,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
     interface Result {
         @MainThread
-        fun onSucceeded(confirmed : Set<BiometricType>)
+        fun onSucceeded(confirmed : Map<BiometricType, BiometricCryptoObject?>)
 
         @MainThread
         fun onCanceled()

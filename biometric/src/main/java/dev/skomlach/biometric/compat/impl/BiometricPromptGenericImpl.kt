@@ -21,6 +21,7 @@ package dev.skomlach.biometric.compat.impl
 
 import androidx.annotation.RestrictTo
 import dev.skomlach.biometric.compat.BiometricConfirmation
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.BiometricPromptCompat
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
@@ -43,6 +44,7 @@ import dev.skomlach.biometric.compat.utils.themes.DarkLightThemes.isNightMode
 import dev.skomlach.common.misc.ExecutorHelper
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.collections.HashMap
 
 @RestrictTo(RestrictTo.Scope.LIBRARY)
 class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Builder) :
@@ -51,15 +53,20 @@ class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Bui
     private val fmAuthCallback: BiometricAuthenticationListener =
         BiometricAuthenticationCallbackImpl()
     private var callback: BiometricPromptCompat.Result? = null
+    private var biometricCryptoObject:  BiometricCryptoObject? = null
     private val isFingerprint = AtomicBoolean(false)
-    private val confirmed: MutableSet<BiometricType?> = HashSet()
+    private val confirmed = HashMap<BiometricType, BiometricCryptoObject?>()
     init {
         isFingerprint.set(builder.allAvailableTypes.contains(BiometricType.BIOMETRIC_FINGERPRINT))
     }
 
-    override fun authenticate(callback: BiometricPromptCompat.Result?) {
+    override fun authenticate(callback: BiometricPromptCompat.Result?, biometricCryptoObject:  BiometricCryptoObject?) {
         d("BiometricPromptGenericImpl.authenticate():")
+        if(this.callback !=callback)
         this.callback = callback
+        if(this.biometricCryptoObject != biometricCryptoObject)
+            this.biometricCryptoObject = biometricCryptoObject
+
         val doNotShowDialog = isFingerprint.get() && isHideDialogInstantly
         if (!doNotShowDialog) {
             dialog = BiometricPromptCompatDialogImpl(
@@ -131,7 +138,7 @@ class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Bui
         val types: List<BiometricType?> = ArrayList(
             builder.allAvailableTypes
         )
-        authenticate(if (dialog != null) dialog?.container else null, types, fmAuthCallback)
+        authenticate(if (dialog != null) dialog?.container else null, types, fmAuthCallback, biometricCryptoObject)
     }
 
     override fun stopAuth() {
@@ -154,15 +161,16 @@ class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Bui
 
     private inner class BiometricAuthenticationCallbackImpl : BiometricAuthenticationListener {
 
-        override fun onSuccess(module: BiometricType?) {
-            if(confirmed.add(module)) {
+        override fun onSuccess(module: BiometricType, biometricCryptoObject: BiometricCryptoObject?) {
+            if(!confirmed.containsKey(module)) {
+                confirmed[module] =  biometricCryptoObject
                 IconStateHelper.successType(module)
                 if(builder.biometricAuthRequest.confirmation == BiometricConfirmation.ALL) {
                     Vibro.start()
                 }
                 BiometricNotificationManager.INSTANCE.dismiss(module)
             }
-            val confirmedList: List<BiometricType?> = ArrayList(confirmed)
+            val confirmedList: List<BiometricType?> = ArrayList(confirmed.keys)
             val allList: MutableList<BiometricType?> = ArrayList(
                 builder.allAvailableTypes
             )
@@ -173,7 +181,7 @@ class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Bui
             ) {
                 ExecutorHelper.INSTANCE.handler.post {
                     cancelAuthenticate()
-                    callback?.onSucceeded(confirmed.filterNotNull().toSet())
+                    callback?.onSucceeded(confirmed)
                 }
             }
         }

@@ -20,6 +20,7 @@
 package dev.skomlach.biometric.compat.engine.core.interfaces
 
 import androidx.annotation.RestrictTo
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.engine.AuthenticationFailureReason
 import dev.skomlach.biometric.compat.engine.AuthenticationHelpReason
 
@@ -35,7 +36,7 @@ interface AuthenticationListener {
      *
      * @param moduleTag The [BiometricModule.tag] of the module that was used for authentication.
      */
-    fun onSuccess(moduleTag: Int)
+    fun onSuccess(moduleTag: Int, biometricCryptoObject: BiometricCryptoObject?)
 
     /**
      * Called after an error or authentication failure.

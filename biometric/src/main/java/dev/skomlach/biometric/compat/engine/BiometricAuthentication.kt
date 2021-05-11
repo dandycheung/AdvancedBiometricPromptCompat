@@ -25,9 +25,11 @@ import android.content.Intent
 import android.os.Build
 import android.view.View
 import androidx.annotation.RestrictTo
+import dev.skomlach.biometric.compat.BiometricCryptoObject
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.engine.internal.DummyBiometricModule
 import dev.skomlach.biometric.compat.engine.core.Core
+import dev.skomlach.biometric.compat.engine.core.RestartPredicatesImpl
 import dev.skomlach.biometric.compat.engine.core.interfaces.AuthenticationListener
 import dev.skomlach.biometric.compat.engine.core.interfaces.BiometricModule
 import dev.skomlach.biometric.compat.engine.internal.face.android.AndroidFaceUnlockModule
@@ -222,15 +224,17 @@ object BiometricAuthentication {
 
     fun authenticate(
         targetView: View?, method: BiometricType,
-        listener: BiometricAuthenticationListener
+        listener: BiometricAuthenticationListener,
+        biometricCryptoObject:  BiometricCryptoObject?
     ) {
-        authenticate(targetView, listOf(method), listener)
+        authenticate(targetView, listOf(method), listener, biometricCryptoObject)
     }
 
     @JvmStatic
     fun authenticate(
         targetView: View?, requestedMethods: List<BiometricType?>,
-        listener: BiometricAuthenticationListener
+        listener: BiometricAuthenticationListener,
+        biometricCryptoObject:  BiometricCryptoObject?
     ) {
         if (requestedMethods.isEmpty()) return
         d("BiometricAuthentication.authenticate")
@@ -267,8 +271,10 @@ object BiometricAuthentication {
                     listener.onHelp(helpReason, msg)
                 }
 
-                override fun onSuccess(moduleTag: Int) {
-                    listener.onSuccess(hashMap[moduleTag])
+                override fun onSuccess(moduleTag: Int, biometricCryptoObject: BiometricCryptoObject?) {
+                    hashMap[moduleTag]?.let {
+                        listener.onSuccess(it, biometricCryptoObject)
+                    }
                 }
 
                 override fun onFailure(
@@ -277,7 +283,7 @@ object BiometricAuthentication {
                 ) {
                     listener.onFailure(reason, hashMap[moduleTag])
                 }
-            })
+            }, RestartPredicatesImpl.defaultPredicate(), biometricCryptoObject)
         }
     }
 

@@ -99,27 +99,27 @@ class SemIrisManager {
         open fun onAuthenticationFailed() {}
         open fun onAuthenticationHelp(i: Int, charSequence: CharSequence?) {}
         open fun onAuthenticationSucceeded(authenticationResult: AuthenticationResult?) {}
-        fun onIRImage(bArr: ByteArray?, i: Int, i2: Int) {}
+        fun onIRImage(bArr: ByteArray??, i: Int, i2: Int) {}
     }
 
     class AuthenticationResult(val cryptoObject: CryptoObject, val iris: Iris)
     class CryptoObject {
         private val mCrypto: Any
-        val fidoRequestData: ByteArray
+        val fidoRequestData: ByteArray?
         var fidoResultData: ByteArray? = null
             private set
 
-        constructor(signature: Signature, bArr: ByteArray) {
+        constructor(signature: Signature, bArr: ByteArray?) {
             mCrypto = signature
             fidoRequestData = bArr
         }
 
-        constructor(cipher: Cipher, bArr: ByteArray) {
+        constructor(cipher: Cipher, bArr: ByteArray?) {
             mCrypto = cipher
             fidoRequestData = bArr
         }
 
-        constructor(mac: Mac, bArr: ByteArray) {
+        constructor(mac: Mac, bArr: ByteArray?) {
             mCrypto = mac
             fidoRequestData = bArr
         }
@@ -127,7 +127,7 @@ class SemIrisManager {
         val cipher: Cipher?
             get() = if (mCrypto is Cipher) mCrypto else null
 
-        private fun setFidoResultData(bArr: ByteArray) {
+        private fun setFidoResultData(bArr: ByteArray?) {
             fidoResultData = bArr
         }
 
