@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
+import android.os.Looper
 import android.os.HandlerThread
 import androidx.core.content.edit
 import androidx.core.graphics.createBitmap
@@ -26,6 +27,7 @@ import dev.skomlach.biometric.compat.utils.SensorPrivacyCheck
 import dev.skomlach.biometric.custom.face.tf.R
 import dev.skomlach.common.contextprovider.AndroidContext
 import dev.skomlach.common.logging.LogCat
+import dev.skomlach.common.misc.ExecutorHelper
 import dev.skomlach.common.storage.SharedPreferenceProvider.getProtectedPreferences
 import dev.skomlach.common.translate.LocalizationHelper
 import kotlinx.coroutines.Dispatchers
@@ -368,6 +370,71 @@ class TensorFlowFaceUnlockManager(
 
     override fun getPermissions(): List<String> = listOf(Manifest.permission.CAMERA)
     override val biometricType: BiometricType = BiometricType.BIOMETRIC_FACE
+
+    override fun prepareForAuthentication(callback: PreparationCallback) {
+        val mainHandler = Handler(Looper.getMainLooper())
+        ExecutorHelper.startOnBackground {
+            try {
+                val recognition = detector
+                if (recognition == null || faceDetector == null || !frameProvider.isHardwareSupported()) {
+                    mainHandler.post {
+                        callback.onPreparationError(
+                            CUSTOM_BIOMETRIC_ERROR_HW_NOT_PRESENT,
+                            LocalizationHelper.getLocalizedString(
+                                context,
+                                R.string.biometriccompat_tf_face_help_model_not_available
+                            )
+                        )
+                    }
+                    return@startOnBackground
+                }
+
+                val recognitionReady = (recognition as? TFLiteObjectDetectionAPIModel)
+                    ?.waitUntilReady() ?: true
+                if (!recognitionReady) {
+                    mainHandler.post {
+                        callback.onPreparationError(
+                            CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                            LocalizationHelper.getLocalizedString(
+                                context,
+                                R.string.biometriccompat_tf_face_help_model_not_available
+                            )
+                        )
+                    }
+                    return@startOnBackground
+                }
+
+                if (antiSpoofingEnabled) {
+                    val liveness = antiSpoofing
+                    if (liveness != null && !liveness.waitUntilReady()) {
+                        mainHandler.post {
+                            callback.onPreparationError(
+                                CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                                LocalizationHelper.getLocalizedString(
+                                    context,
+                                    R.string.biometriccompat_tf_face_help_model_not_available
+                                )
+                            )
+                        }
+                        return@startOnBackground
+                    }
+                }
+
+                mainHandler.post { callback.onPrepared() }
+            } catch (e: Throwable) {
+                LogCat.logException(e)
+                mainHandler.post {
+                    callback.onPreparationError(
+                        CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                        LocalizationHelper.getLocalizedString(
+                            context,
+                            R.string.biometriccompat_tf_face_help_model_not_available
+                        )
+                    )
+                }
+            }
+        }
+    }
 
     override fun isHardwareDetected(): Boolean {
         return detector != null && faceDetector != null && frameProvider.isHardwareSupported()

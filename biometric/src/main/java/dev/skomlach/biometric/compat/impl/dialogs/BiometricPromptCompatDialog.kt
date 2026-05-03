@@ -269,12 +269,13 @@ class BiometricPromptCompatDialog : DialogFragment() {
         dialog?.let {
             it.window?.let { w ->
                 val wlp = w.attributes
-                wlp.height = containerView?.apply {
-                    this.measure(
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                    )
-                }?.measuredHeight ?: WindowManager.LayoutParams.WRAP_CONTENT
+                val configuredWidth = resources.getDimensionPixelSize(R.dimen.dialog_width)
+                wlp.width = if (configuredWidth > 0) {
+                    configuredWidth.coerceAtMost(resources.displayMetrics.widthPixels)
+                } else {
+                    WindowManager.LayoutParams.MATCH_PARENT
+                }
+                wlp.height = WindowManager.LayoutParams.WRAP_CONTENT
                 wlp.gravity = Gravity.BOTTOM
                 w.attributes = wlp
                 (w.decorView as ViewGroup?)

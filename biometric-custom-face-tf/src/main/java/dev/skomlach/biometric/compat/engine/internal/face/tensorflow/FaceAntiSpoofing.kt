@@ -12,6 +12,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
@@ -32,6 +34,7 @@ class FaceAntiSpoofing private constructor(
         const val ROUTE_INDEX: Int = 6
         const val LAPLACE_THRESHOLD: Int = 50
         const val LAPLACIAN_THRESHOLD: Int = 1000
+        private const val MODEL_INIT_TIMEOUT_MS = 3_000L
 
         @Throws(IOException::class)
         private fun loadModelFile(assets: AssetManager, modelFilename: String): MappedByteBuffer {
@@ -67,6 +70,11 @@ class FaceAntiSpoofing private constructor(
     private val clssPred = Array(1) { FloatArray(8) }
     private val leafNodeMask = Array(1) { FloatArray(8) }
     private val outputs = HashMap<Int, Any>(2)
+    private val initLatch = CountDownLatch(1)
+
+    @Volatile
+    private var initializationError: Throwable? = null
+
     private val outputIndex0: Int by lazy {
         try {
             interpreter?.getOutputIndex("Identity") ?: 0
@@ -84,13 +92,35 @@ class FaceAntiSpoofing private constructor(
 
     init {
 
+        startModelInitialization()
+    }
+
+    private fun startModelInitialization() {
         ExecutorHelper.startOnBackground {
-            interpreter = Interpreter(
-                loadModelFile(assetManager, MODEL_FILE),
-                TfLiteBackendHelper.createOptions(selection)
-            )
-            outputs[outputIndex0] = clssPred
-            outputs[outputIndex1] = leafNodeMask
+            try {
+                interpreter = Interpreter(
+                    loadModelFile(assetManager, MODEL_FILE),
+                    TfLiteBackendHelper.createOptions(selection)
+                )
+                outputs[outputIndex0] = clssPred
+                outputs[outputIndex1] = leafNodeMask
+            } catch (t: Throwable) {
+                initializationError = t
+                LogCat.logException(t)
+            } finally {
+                initLatch.countDown()
+            }
+        }
+    }
+
+    fun waitUntilReady(timeoutMs: Long = MODEL_INIT_TIMEOUT_MS): Boolean {
+        return try {
+            initLatch.await(timeoutMs, TimeUnit.MILLISECONDS) &&
+                    interpreter != null &&
+                    initializationError == null
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
         }
     }
 
@@ -104,6 +134,10 @@ class FaceAntiSpoofing private constructor(
         try {
             convertBitmapToByteBuffer(bitmapScale)
             clearOutputs()
+            if (!waitUntilReady()) {
+                LogCat.logError(javaClass.simpleName, "Interpreter is not ready")
+                return Float.MAX_VALUE
+            }
             val interpreter = interpreter ?: run {
                 LogCat.logError(javaClass.simpleName, "Interpreter is not initialized")
                 return Float.MAX_VALUE

@@ -25,5 +25,6 @@
     <dimen name="fingerprint_icon_size_compat">64dp</dimen>
     <dimen name="fingerprint_status_layout_margin_vertical_top">48dp</dimen>
     <dimen name="fingerprint_status_layout_margin_vertical_bottom">48dp</dimen>
+    <dimen name="dialog_min_width">0dp</dimen>
     <dimen name="dialog_width">0dp</dimen>
 </resources>

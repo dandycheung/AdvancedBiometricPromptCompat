@@ -43,6 +43,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.sqrt
 
 class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier {
@@ -52,6 +54,7 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
         private const val OUTPUT_SIZE = 192
         private const val IMAGE_MEAN = 128.0f
         private const val IMAGE_STD = 128.0f
+        private const val MODEL_INIT_TIMEOUT_MS = 3_000L
 
         @Throws(IOException::class)
         private fun loadModelFile(assets: AssetManager, modelFilename: String): MappedByteBuffer {
@@ -80,9 +83,6 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
             val model = TFLiteObjectDetectionAPIModel()
             model.inputSize = inputSize
             model.isModelQuantized = isQuantized
-            ExecutorHelper.startOnBackground {
-                model.tfLite = Interpreter(loadModelFile(assetManager, modelFilename), options)
-            }
             val numBytesPerChannel = if (isQuantized) 1 else 4
             model.imgData =
                 ByteBuffer.allocateDirect(inputSize * inputSize * 3 * numBytesPerChannel)
@@ -90,6 +90,7 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
             model.intValues = IntArray(inputSize * inputSize)
             model.embeddings = Array(1) { FloatArray(OUTPUT_SIZE) }
             model.outputMap[0] = model.embeddings
+            model.startModelInitialization(assetManager, modelFilename, options)
             return model
         }
     }
@@ -125,6 +126,38 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
     private var imgData: ByteBuffer = ByteBuffer.allocate(0)
     private var tfLite: Interpreter? = null
     private val outputMap: MutableMap<Int, Any> = HashMap(1)
+    private val initLatch = CountDownLatch(1)
+
+    @Volatile
+    private var initializationError: Throwable? = null
+
+    private fun startModelInitialization(
+        assetManager: AssetManager,
+        modelFilename: String,
+        options: Interpreter.Options?
+    ) {
+        ExecutorHelper.startOnBackground {
+            try {
+                tfLite = Interpreter(loadModelFile(assetManager, modelFilename), options)
+            } catch (t: Throwable) {
+                initializationError = t
+                LogCat.logException(t)
+            } finally {
+                initLatch.countDown()
+            }
+        }
+    }
+
+    fun waitUntilReady(timeoutMs: Long = MODEL_INIT_TIMEOUT_MS): Boolean {
+        return try {
+            initLatch.await(timeoutMs, TimeUnit.MILLISECONDS) &&
+                    tfLite != null &&
+                    initializationError == null
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+    }
 
     @Throws(JSONException::class)
     private fun json2recognition(jsonObject: JSONObject): SimilarityClassifier.Recognition {
@@ -187,7 +220,7 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
         }
         jsonObject.put("title", rec.title)
 
-        rec.crop?.let { crop ->
+        if (BuildConfig.DEBUG) rec.crop?.let { crop ->
             val byteArrayOutputStream = ByteArrayOutputStream()
             crop.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
             jsonObject.put(
@@ -313,6 +346,10 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
         }
 
         embeddings[0].fill(0f)
+        if (!waitUntilReady()) {
+            LogCat.logError(javaClass.simpleName, "Interpreter is not ready")
+            return mutableListOf()
+        }
         val interpreter = tfLite ?: run {
             LogCat.logError(javaClass.simpleName, "Interpreter is not initialized")
             return mutableListOf<SimilarityClassifier.Recognition>()

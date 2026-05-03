@@ -115,18 +115,21 @@ class BiometricPromptCompatDialogImpl(
             e("BiometricPromptGenericImpl.AbstractBiometricPromptCompat. started.")
 
             if (compatBuilder.getTitle() == null) {
-                dialog.title?.visibility = View.INVISIBLE
+                dialog.title?.visibility = View.GONE
             } else {
+                dialog.title?.visibility = View.VISIBLE
                 dialog.title?.text = compatBuilder.getTitle()
             }
             if (compatBuilder.getSubtitle() == null) {
-                dialog.subtitle?.visibility = View.INVISIBLE
+                dialog.subtitle?.visibility = View.GONE
             } else {
+                dialog.subtitle?.visibility = View.VISIBLE
                 dialog.subtitle?.text = compatBuilder.getSubtitle()
             }
             if (compatBuilder.getDescription() == null) {
-                dialog.description?.visibility = View.INVISIBLE
+                dialog.description?.visibility = View.GONE
             } else {
+                dialog.description?.visibility = View.VISIBLE
                 dialog.description?.text = compatBuilder.getDescription()
             }
 

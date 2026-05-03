@@ -678,23 +678,24 @@ class ZkFingerUnlockManager(
     private fun stopAuthentication() {
         if (!isSessionActive.compareAndSet(true, false)) return
         unregisterUsbReceiver()
+        val sensor = fingerprintSensor
+        fingerprintSensor = null
         try {
-            fingerprintSensor?.stopCapture(effectiveConfig.deviceIndex)
+            sensor?.stopCapture(effectiveConfig.deviceIndex)
         } catch (e: Throwable) {
             LogCat.logException(e)
         }
         try {
-            fingerprintSensor?.close(effectiveConfig.deviceIndex)
+            sensor?.close(effectiveConfig.deviceIndex)
         } catch (e: Throwable) {
             LogCat.logException(e)
         }
         try {
-            fingerprintSensor?.destroy()
+            sensor?.let { FingprintFactory.destroy(it) }
         } catch (e: Throwable) {
             LogCat.logException(e)
         }
         runCatching { ZKFingerService.free() }
-        fingerprintSensor = null
         authCallback = null
         cancellationSignal = null
         enrollmentSamples.clear()

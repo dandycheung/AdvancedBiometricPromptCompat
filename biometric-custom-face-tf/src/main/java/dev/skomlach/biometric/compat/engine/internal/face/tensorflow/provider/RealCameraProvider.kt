@@ -29,6 +29,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 class RealCameraProvider(private val context: Context) : IFrameProvider,
     ImageReader.OnImageAvailableListener {
 
+    companion object {
+        private const val MIN_PREVIEW_LONG_EDGE = 640
+        private const val MIN_PREVIEW_SHORT_EDGE = 480
+    }
+
     private var onFrame: ((Bitmap, List<Face>) -> Unit)? = null
     private var onError: ((Int, String) -> Unit)? = null
     private var backgroundHandler: Handler? = null
@@ -50,7 +55,7 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
         errorListener: (code: Int, message: String) -> Unit
     ) {
         if (backgroundThread == null) {
-            backgroundThread = HandlerThread("FakeAssetProvider").apply {
+            backgroundThread = HandlerThread("TensorFlowFaceCameraProvider").apply {
                 start()
                 backgroundHandler = Handler(looper)
             }
@@ -127,9 +132,8 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
             sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
 
-            val validSizes = map.getOutputSizes(ImageFormat.YUV_420_888).filter {
-                it.width >= 1280 && it.height >= 720
-            }
+            val validSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
+                .filter { isUsablePreviewSize(it) }
 
             if (validSizes.isEmpty()) {
                 onError?.invoke(
@@ -334,12 +338,16 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
                 val characteristics = manager.getCameraCharacteristics(it)
                 val map =
                     characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
-                val validSizes = map.getOutputSizes(ImageFormat.YUV_420_888).filter { s ->
-                    s.width >= 1280 && s.height >= 720
-                }
+                val validSizes = map.getOutputSizes(ImageFormat.YUV_420_888)
+                    .filter { s -> isUsablePreviewSize(s) }
 
                 validSizes.isNotEmpty()
             } else false
         }
+    }
+
+    private fun isUsablePreviewSize(size: Size): Boolean {
+        return maxOf(size.width, size.height) >= MIN_PREVIEW_LONG_EDGE &&
+                minOf(size.width, size.height) >= MIN_PREVIEW_SHORT_EDGE
     }
 }
