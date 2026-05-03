@@ -49,7 +49,7 @@ import dev.skomlach.common.misc.ExecutorHelper
 
 class SoftwareBiometricModule(
     private val method: BiometricMethod,
-    private val manager: AbstractSoftwareBiometricManager?,
+    internal val manager: AbstractSoftwareBiometricManager?,
     private val listener: LegacyBiometricInitListener?
 ) :
     AbstractBiometricModule(method) {

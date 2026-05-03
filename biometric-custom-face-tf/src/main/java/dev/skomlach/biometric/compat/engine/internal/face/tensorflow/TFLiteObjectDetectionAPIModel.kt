@@ -84,7 +84,8 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
                 model.tfLite = Interpreter(loadModelFile(assetManager, modelFilename), options)
             }
             val numBytesPerChannel = if (isQuantized) 1 else 4
-            model.imgData = ByteBuffer.allocateDirect(inputSize * inputSize * 3 * numBytesPerChannel)
+            model.imgData =
+                ByteBuffer.allocateDirect(inputSize * inputSize * 3 * numBytesPerChannel)
             model.imgData.order(ByteOrder.nativeOrder())
             model.intValues = IntArray(inputSize * inputSize)
             model.embeddings = Array(1) { FloatArray(OUTPUT_SIZE) }
@@ -206,7 +207,10 @@ class TFLiteObjectDetectionAPIModel private constructor() : SimilarityClassifier
             if (BuildConfig.DEBUG) {
                 registered.values.toMutableList().forEach { rec ->
                     if (rec != null) {
-                        ImageUtils.deleteBitmap(AndroidContext.appContext, "${rec.title}-${rec.id}.png")
+                        ImageUtils.deleteBitmap(
+                            AndroidContext.appContext,
+                            "${rec.title}-${rec.id}.png"
+                        )
                     }
                 }
             }

@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Observer
 import dev.skomlach.biometric.compat.crypto.CryptographyManager
+import dev.skomlach.biometric.compat.custom.AbstractSoftwareBiometricManager
 import dev.skomlach.biometric.compat.engine.BiometricMethod
 import dev.skomlach.biometric.compat.engine.LegacyBiometric
 import dev.skomlach.biometric.compat.engine.LegacyBiometricInitListener
@@ -879,12 +880,18 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         if (builder.enroll) {
             checkNotificationPermissions {
                 checkPermissions(callbackOuter) {
-                    checkSensor(callbackOuter) {
-                        authTask.invoke()
+                    checkModulePreparation(callbackOuter) {
+                        checkSensor(callbackOuter) {
+                            authTask.invoke()
+                        }
                     }
                 }
             }
-        } else authTask.invoke()
+        } else {
+            checkModulePreparation(callbackOuter) {
+                authTask.invoke()
+            }
+        }
     }
 
     private fun checkNotificationPermissions(authTask: () -> Unit) {
@@ -964,6 +971,67 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
             }
         } else
             authTask.invoke()
+    }
+
+    private fun checkModulePreparation(callback: AuthenticationCallback, authTask: () -> Unit) {
+        BiometricLoggerImpl.e("BiometricPromptCompat.checkModulePreparation")
+        LegacyBiometric.prepareSoftwareModulesForAuthentication(
+            builder.getBiometricAuthRequest(),
+            builder.getAllAvailableTypes(),
+            builder.enroll,
+            object : AbstractSoftwareBiometricManager.PreparationCallback() {
+                override fun onPrepared() {
+                    authTask.invoke()
+                }
+
+                override fun onPreparationError(errMsgId: Int, errString: CharSequence?) {
+                    authFlowInProgress.set(false)
+                    callback.onCanceled(
+                        builder.getAllAvailableTypes().map { type ->
+                            AuthenticationResult(
+                                type,
+                                reason = mapPreparationError(errMsgId),
+                                description = errString
+                            )
+                        }.toSet()
+                    )
+                }
+
+                override fun onPreparationCanceled() {
+                    authFlowInProgress.set(false)
+                    callback.onCanceled(
+                        builder.getAllAvailableTypes().map { type ->
+                            AuthenticationResult(
+                                type,
+                                reason = AuthenticationFailureReason.CANCELED
+                            )
+                        }.toSet()
+                    )
+
+                }
+            }
+        )
+    }
+
+    private fun mapPreparationError(errMsgId: Int): AuthenticationFailureReason {
+        return when (if (errMsgId < 1000) errMsgId else errMsgId % 1000) {
+            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_NO_PERMISSIONS ->
+                AuthenticationFailureReason.MISSING_PERMISSIONS_ERROR
+
+            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_HW_NOT_PRESENT ->
+                AuthenticationFailureReason.NO_HARDWARE
+
+            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                AuthenticationFailureReason.HARDWARE_UNAVAILABLE
+
+            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_LOCKOUT ->
+                AuthenticationFailureReason.LOCKED_OUT
+
+            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_LOCKOUT_PERMANENT ->
+                AuthenticationFailureReason.HARDWARE_UNAVAILABLE
+
+            else -> AuthenticationFailureReason.UNKNOWN
+        }
     }
 
     private fun checkSensor(callback: AuthenticationCallback, authTask: () -> Unit) {

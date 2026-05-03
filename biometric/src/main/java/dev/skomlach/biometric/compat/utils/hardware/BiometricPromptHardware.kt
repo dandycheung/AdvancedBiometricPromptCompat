@@ -31,6 +31,7 @@ import androidx.biometric.BiometricManager
 import androidx.core.content.edit
 import dev.skomlach.biometric.compat.BiometricAuthRequest
 import dev.skomlach.biometric.compat.BiometricPromptCompat
+import dev.skomlach.biometric.compat.BiometricProviderType
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.engine.LegacyBiometric
 import dev.skomlach.biometric.compat.utils.BiometricLockoutFix
@@ -196,7 +197,10 @@ class BiometricPromptHardware(authRequest: BiometricAuthRequest) :
         if (!isAnyHardwareAvailable) return false
 
         if (type == BiometricType.BIOMETRIC_FINGERPRINT) {
-            return LegacyBiometric.getAvailableBiometricModule(type)?.isHardwarePresent == true
+            return LegacyBiometric.getAvailableBiometricModule(
+                type,
+                BiometricProviderType.HARDWARE
+            )?.isHardwarePresent == true
         }
         BiometricPromptCompat.deviceInfo?.let {
             if (it.sensors.isNotEmpty()) {
@@ -268,7 +272,10 @@ class BiometricPromptHardware(authRequest: BiometricAuthRequest) :
         if (!isAnyHardwareAvailable) return false
 
         if (type == BiometricType.BIOMETRIC_FINGERPRINT) {
-            return LegacyBiometric.getAvailableBiometricModule(type)?.hasEnrolled == true
+            return LegacyBiometric.getAvailableBiometricModule(
+                type,
+                BiometricProviderType.HARDWARE
+            )?.hasEnrolled == true
         }
 
         val result = modalityResult(type)

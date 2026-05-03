@@ -20,11 +20,9 @@
 package dev.skomlach.biometric.compat.utils.hardware
 
 import dev.skomlach.biometric.compat.BiometricAuthRequest
-import dev.skomlach.biometric.compat.BiometricProviderType
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.engine.LegacyBiometric
 import dev.skomlach.biometric.compat.engine.internal.AbstractBiometricModule
-import dev.skomlach.biometric.compat.engine.internal.SoftwareBiometricModule
 import dev.skomlach.biometric.compat.utils.BiometricLockoutFix
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.e
 
@@ -34,29 +32,14 @@ class LegacyHardware(authRequest: BiometricAuthRequest) : AbstractHardware(authR
         get() {
             val biometricModules =
                 if (biometricAuthRequest.type == BiometricType.BIOMETRIC_ANY) LegacyBiometric.availableBiometrics.map {
-                    LegacyBiometric.getAvailableBiometricModule(it)
-                }
-                else listOf(
-                    LegacyBiometric.getAvailableBiometricModule(
-                        biometricAuthRequest.type
-                    )
+                    LegacyBiometric.getAvailableBiometricModules(it, biometricAuthRequest.provider)
+                }.flatten()
+                else LegacyBiometric.getAvailableBiometricModules(
+                    biometricAuthRequest.type,
+                    biometricAuthRequest.provider
                 )
             for (biometricModule in biometricModules) {
-                val result = when (biometricAuthRequest.provider) {
-                    BiometricProviderType.SOFTWARE if biometricModule is SoftwareBiometricModule -> {
-                        biometricModule.isHardwarePresent
-                    }
-
-                    BiometricProviderType.HARDWARE if biometricModule !is SoftwareBiometricModule -> {
-                        biometricModule?.isHardwarePresent == true
-                    }
-
-                    BiometricProviderType.COMBINED -> {
-                        biometricModule?.isHardwarePresent == true
-                    }
-
-                    else -> false
-                }
+                val result = biometricModule.isHardwarePresent
 
                 if (result) return true.also {
                     e("LegacyHardware - isHardwareAvailable=$it; $biometricAuthRequest")
@@ -71,29 +54,14 @@ class LegacyHardware(authRequest: BiometricAuthRequest) : AbstractHardware(authR
         get() {
             val biometricModules =
                 if (biometricAuthRequest.type == BiometricType.BIOMETRIC_ANY) LegacyBiometric.availableBiometrics.map {
-                    LegacyBiometric.getAvailableBiometricModule(it)
-                }
-                else listOf(
-                    LegacyBiometric.getAvailableBiometricModule(
-                        biometricAuthRequest.type
-                    )
+                    LegacyBiometric.getAvailableBiometricModules(it, biometricAuthRequest.provider)
+                }.flatten()
+                else LegacyBiometric.getAvailableBiometricModules(
+                    biometricAuthRequest.type,
+                    biometricAuthRequest.provider
                 )
             for (biometricModule in biometricModules) {
-                val result = when (biometricAuthRequest.provider) {
-                    BiometricProviderType.SOFTWARE if biometricModule is SoftwareBiometricModule -> {
-                        biometricModule.hasEnrolled
-                    }
-
-                    BiometricProviderType.HARDWARE if biometricModule !is SoftwareBiometricModule -> {
-                        biometricModule?.hasEnrolled == true
-                    }
-
-                    BiometricProviderType.COMBINED -> {
-                        biometricModule?.hasEnrolled == true
-                    }
-
-                    else -> false
-                }
+                val result = biometricModule.hasEnrolled
 
                 if (result) return true.also {
                     e("LegacyHardware - isBiometricEnrolled=$it $biometricAuthRequest")
@@ -109,29 +77,14 @@ class LegacyHardware(authRequest: BiometricAuthRequest) : AbstractHardware(authR
 
             val biometricModules =
                 if (biometricAuthRequest.type == BiometricType.BIOMETRIC_ANY) LegacyBiometric.availableBiometrics.map {
-                    LegacyBiometric.getAvailableBiometricModule(it)
-                }
-                else listOf(
-                    LegacyBiometric.getAvailableBiometricModule(
-                        biometricAuthRequest.type
-                    )
+                    LegacyBiometric.getAvailableBiometricModules(it, biometricAuthRequest.provider)
+                }.flatten()
+                else LegacyBiometric.getAvailableBiometricModules(
+                    biometricAuthRequest.type,
+                    biometricAuthRequest.provider
                 )
             for (biometricModule in biometricModules) {
-                val result = when (biometricAuthRequest.provider) {
-                    BiometricProviderType.SOFTWARE if biometricModule is SoftwareBiometricModule -> {
-                        biometricModule.isLockOut
-                    }
-
-                    BiometricProviderType.HARDWARE if biometricModule !is SoftwareBiometricModule -> {
-                        biometricModule?.isLockOut == true
-                    }
-
-                    BiometricProviderType.COMBINED -> {
-                        biometricModule?.isLockOut == true
-                    }
-
-                    else -> false
-                }
+                val result = biometricModule.isLockOut
 
                 if (result) return true
             }
@@ -142,24 +95,10 @@ class LegacyHardware(authRequest: BiometricAuthRequest) : AbstractHardware(authR
     override val isBiometricEnrollChanged: Boolean
         get() {
             if (biometricAuthRequest.type == BiometricType.BIOMETRIC_ANY) return LegacyBiometric.isEnrollChanged()
-            val biometricModule = LegacyBiometric.getAvailableBiometricModule(
-                biometricAuthRequest.type
-            )
-            return when (biometricAuthRequest.provider) {
-                BiometricProviderType.SOFTWARE if biometricModule is SoftwareBiometricModule -> {
-                    biometricModule.isBiometricEnrollChanged
-                }
-
-                BiometricProviderType.HARDWARE if biometricModule !is SoftwareBiometricModule -> {
-                    biometricModule?.isBiometricEnrollChanged == true
-                }
-
-                BiometricProviderType.COMBINED -> {
-                    biometricModule?.isBiometricEnrollChanged == true
-                }
-
-                else -> false
-            }
+            return LegacyBiometric.getAvailableBiometricModules(
+                biometricAuthRequest.type,
+                biometricAuthRequest.provider
+            ).any { it.isBiometricEnrollChanged }
         }
 
     override fun updateBiometricEnrollChanged() {
@@ -167,10 +106,12 @@ class LegacyHardware(authRequest: BiometricAuthRequest) : AbstractHardware(authR
             LegacyBiometric.updateBiometricEnrollChanged()
             return
         }
-        val biometricModule = LegacyBiometric.getAvailableBiometricModule(
-            biometricAuthRequest.type
-        )
-        (biometricModule as? AbstractBiometricModule)?.updateBiometricEnrollChanged()
+        LegacyBiometric.getAvailableBiometricModules(
+            biometricAuthRequest.type,
+            biometricAuthRequest.provider
+        ).forEach {
+            (it as? AbstractBiometricModule)?.updateBiometricEnrollChanged()
+        }
     }
 
     override fun lockout() {

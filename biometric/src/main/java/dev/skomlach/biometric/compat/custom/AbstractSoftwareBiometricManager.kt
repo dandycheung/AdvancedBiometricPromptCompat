@@ -54,6 +54,12 @@ abstract class AbstractSoftwareBiometricManager {
     abstract fun resetPermanentLockOut()
     abstract fun getPermissions(): List<String>
 
+    open fun prepareForAuthentication(
+        callback: PreparationCallback
+    ) {
+        callback.onPrepared()
+    }
+
     abstract val biometricType: BiometricType
     abstract fun isHardwareDetected(): Boolean
     abstract fun hasEnrolledBiometric(): Boolean
@@ -80,6 +86,12 @@ abstract class AbstractSoftwareBiometricManager {
         open fun onAuthenticationSucceeded(result: AuthenticationResult?) {}
         open fun onAuthenticationFailed() {}
         open fun onAuthenticationCancelled() {}
+    }
+
+    abstract class PreparationCallback {
+        open fun onPrepared() {}
+        open fun onPreparationError(errMsgId: Int, errString: CharSequence?) {}
+        open fun onPreparationCanceled() {}
     }
 
     class AuthenticationResult(val cryptoObject: CryptoObject?)

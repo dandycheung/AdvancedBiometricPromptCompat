@@ -110,7 +110,8 @@ class BiometricPromptGenericImpl(override val builder: BiometricPromptCompat.Bui
                 dialog?.authPreview,
                 types,
                 fmAuthCallback,
-                BundleBuilder.create(builder)
+                BundleBuilder.create(builder),
+                builder.getBiometricAuthRequest().provider
             )
         }, 500)
 

@@ -40,7 +40,11 @@ class FaceAntiSpoofing private constructor(
                     val fileChannel = inputStream.channel
                     val startOffset = fileDescriptor.startOffset
                     val declaredLength = fileDescriptor.declaredLength
-                    return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+                    return fileChannel.map(
+                        FileChannel.MapMode.READ_ONLY,
+                        startOffset,
+                        declaredLength
+                    )
                 }
             }
         }

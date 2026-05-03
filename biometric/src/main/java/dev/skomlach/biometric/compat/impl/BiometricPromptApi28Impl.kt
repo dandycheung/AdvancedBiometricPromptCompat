@@ -455,7 +455,8 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
                     dialog?.authPreview,
                     secondary,
                     fmAuthCallback,
-                    BundleBuilder.create(builder)
+                    BundleBuilder.create(builder),
+                    builder.getBiometricAuthRequest().provider
                 )
             }, 500)
         }

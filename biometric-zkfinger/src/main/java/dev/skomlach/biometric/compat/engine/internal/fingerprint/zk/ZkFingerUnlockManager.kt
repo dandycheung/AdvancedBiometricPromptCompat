@@ -129,6 +129,52 @@ class ZkFingerUnlockManager(
 
     override fun getPermissions(): List<String> = emptyList()
 
+    override fun prepareForAuthentication(
+        callback: PreparationCallback
+    ) {
+        try {
+            val device = findSupportedDevice()
+            if (device == null) {
+                callback.onPreparationError(
+                    CUSTOM_BIOMETRIC_ERROR_HW_NOT_PRESENT,
+                    localized(R.string.biometriccompat_zkfinger_help_sensor_not_found)
+                )
+                return
+            }
+
+            val usbManager = usbManager()
+            if (usbManager?.hasPermission(device) == true) {
+                callback.onPrepared()
+                return
+            }
+
+            requestUsbPermission(
+                device,
+                onGranted = {
+                    callback.onPrepared()
+                },
+                onDenied = {
+                    callback.onPreparationError(
+                        CUSTOM_BIOMETRIC_ERROR_NO_PERMISSIONS,
+                        localized(R.string.biometriccompat_zkfinger_help_usb_permission_denied)
+                    )
+                },
+                onDetached = {
+                    callback.onPreparationError(
+                        CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                        localized(R.string.biometriccompat_zkfinger_help_sensor_unavailable)
+                    )
+                }
+            )
+        } catch (e: Throwable) {
+            LogCat.logException(e)
+            callback.onPreparationError(
+                CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                localized(R.string.biometriccompat_zkfinger_help_sensor_unavailable)
+            )
+        }
+    }
+
     override val biometricType: BiometricType = BiometricType.BIOMETRIC_FINGERPRINT
 
     override fun isHardwareDetected(): Boolean = findSupportedDevice() != null
@@ -240,20 +286,26 @@ class ZkFingerUnlockManager(
                 return
             }
 
-            registerUsbReceiver(device)
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        PendingIntent.FLAG_MUTABLE
-                    } else {
-                        0
-                    }
-            val permissionIntent = PendingIntent.getBroadcast(
-                context,
-                0,
-                Intent(permissionAction()).setPackage(context.packageName),
-                flags
+            requestUsbPermission(
+                device,
+                onGranted = { grantedDevice ->
+                    backgroundHandler?.post { openDevice(grantedDevice) }
+                },
+                onDenied = {
+                    onAuthenticationError(
+                        CUSTOM_BIOMETRIC_ERROR_NO_PERMISSIONS,
+                        localized(R.string.biometriccompat_zkfinger_help_usb_permission_denied)
+                    )
+                    stopAuthentication()
+                },
+                onDetached = {
+                    onAuthenticationError(
+                        CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
+                        localized(R.string.biometriccompat_zkfinger_help_sensor_unavailable)
+                    )
+                    stopAuthentication()
+                }
             )
-            usbManager?.requestPermission(device, permissionIntent)
         } catch (e: Throwable) {
             LogCat.logException(e)
             onAuthenticationError(
@@ -266,7 +318,38 @@ class ZkFingerUnlockManager(
         }
     }
 
-    private fun registerUsbReceiver(targetDevice: UsbDevice) {
+    private fun requestUsbPermission(
+        targetDevice: UsbDevice,
+        onGranted: (UsbDevice) -> Unit,
+        onDenied: () -> Unit,
+        onDetached: () -> Unit
+    ) {
+        val manager = usbManager() ?: run {
+            onDetached()
+            return
+        }
+        registerUsbReceiver(targetDevice, onGranted, onDenied, onDetached)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_MUTABLE
+                } else {
+                    0
+                }
+        val permissionIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(permissionAction()).setPackage(context.packageName),
+            flags
+        )
+        manager.requestPermission(targetDevice, permissionIntent)
+    }
+
+    private fun registerUsbReceiver(
+        targetDevice: UsbDevice,
+        onGranted: (UsbDevice) -> Unit,
+        onDenied: () -> Unit,
+        onDetached: () -> Unit
+    ) {
         unregisterUsbReceiver()
         val filter = IntentFilter().apply {
             addAction(permissionAction())
@@ -287,23 +370,17 @@ class ZkFingerUnlockManager(
                 }
                 when (intent.action) {
                     permissionAction() -> {
+                        unregisterUsbReceiver()
                         if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                            backgroundHandler?.post { openDevice(device) }
+                            onGranted(device)
                         } else {
-                            onAuthenticationError(
-                                CUSTOM_BIOMETRIC_ERROR_NO_PERMISSIONS,
-                                localized(R.string.biometriccompat_zkfinger_help_usb_permission_denied)
-                            )
-                            stopAuthentication()
+                            onDenied()
                         }
                     }
 
                     UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                        onAuthenticationError(
-                            CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
-                            localized(R.string.biometriccompat_zkfinger_help_sensor_unavailable)
-                        )
-                        stopAuthentication()
+                        unregisterUsbReceiver()
+                        onDetached()
                     }
                 }
             }

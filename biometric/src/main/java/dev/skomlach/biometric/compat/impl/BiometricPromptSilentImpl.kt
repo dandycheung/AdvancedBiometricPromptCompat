@@ -105,7 +105,8 @@ class BiometricPromptSilentImpl(override val builder: BiometricPromptCompat.Buil
                 null,
                 types,
                 fmAuthCallback,
-                BundleBuilder.create(builder)
+                BundleBuilder.create(builder),
+                builder.getBiometricAuthRequest().provider
             )
         }, 500)
     }
