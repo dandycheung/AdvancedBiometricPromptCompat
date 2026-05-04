@@ -29,7 +29,7 @@
     <string name="biometriccompat_tf_face_help_model_too_many_faces">Too many faces. There should only be one face</string>
     <string name="biometriccompat_tf_face_help_model_look_straight_ahead">Look straight ahead</string>
     <string name="biometriccompat_tf_face_help_model_too_dark">Too dark</string>
-    <string name="biometriccompat_tf_face_help_model_no_camera_permissions">No Camera Permission</string>
+    <string name="biometriccompat_tf_face_help_model_no_camera_permissions">Camera permission is required to use this feature.</string>
     <string name="biometriccompat_tf_face_help_model_no_front_camera">No front camera</string>
     <string name="biometriccompat_tf_face_help_model_camera_low_res">Camera resolution low</string>
     <string name="biometriccompat_tf_face_help_model_camera_locked_out">Camera locked out</string>

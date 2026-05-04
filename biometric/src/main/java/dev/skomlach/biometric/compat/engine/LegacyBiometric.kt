@@ -142,6 +142,18 @@ object LegacyBiometric {
         return permission
     }
 
+    fun getPreferredSoftwareModulePermissions(
+        types: Collection<BiometricType>,
+        provider: BiometricProviderType,
+        enroll: Boolean
+    ): List<String> {
+        return types
+            .mapNotNull { type -> getPreferredBiometricModule(type, provider, enroll) }
+            .filterIsInstance<SoftwareBiometricModule>()
+            .flatMap { it.manager?.getPermissions() ?: emptyList() }
+            .distinct()
+    }
+
     fun rollbackLastEnrollInSoftwareModules() {
         d("BiometricAuthentication", "rollbackLastEnroll")
         synchronized(moduleHashMap) {

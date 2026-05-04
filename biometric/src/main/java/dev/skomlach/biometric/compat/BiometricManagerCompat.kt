@@ -323,6 +323,41 @@ object BiometricManagerCompat {
     fun getUsedPermissions(
         types: Collection<BiometricType>
     ): List<String> {
+        val permission = getHardwarePermissions(types)
+        permission.addAll(LegacyBiometric.getSoftwareModulePermissions(types))
+        return ArrayList(permission)
+    }
+
+    internal fun getUsedPermissions(
+        types: Collection<BiometricType>,
+        biometricAuthRequest: BiometricAuthRequest,
+        enroll: Boolean
+    ): List<String> {
+        val permission: MutableSet<String> = java.util.HashSet()
+        if (biometricAuthRequest.provider != BiometricProviderType.SOFTWARE) {
+            permission.addAll(getHardwarePermissions(types))
+        }
+
+        if (biometricAuthRequest.provider != BiometricProviderType.HARDWARE) {
+            permission.addAll(
+                if (biometricAuthRequest.provider == BiometricProviderType.SOFTWARE) {
+                    LegacyBiometric.getSoftwareModulePermissions(types)
+                } else {
+                    LegacyBiometric.getPreferredSoftwareModulePermissions(
+                        types,
+                        biometricAuthRequest.provider,
+                        enroll
+                    )
+                }
+            )
+        }
+
+        return ArrayList(permission)
+    }
+
+    private fun getHardwarePermissions(
+        types: Collection<BiometricType>
+    ): MutableSet<String> {
 
         val permission: MutableSet<String> = java.util.HashSet()
         types.forEach {
@@ -363,8 +398,7 @@ object BiometricManagerCompat {
 
             }
         }
-        permission.addAll(LegacyBiometric.getSoftwareModulePermissions(types))
-        return ArrayList(permission)
+        return permission
     }
 
     private fun isCameraNotAvailable(

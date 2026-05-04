@@ -244,11 +244,11 @@ object LocalizationHelper {
     fun getLocalizedString(context: Context, @StringRes resId: Int): String {
         ensureLocaleState()
         return try {
-            getTranslatedStringFromResources(context, resId)?.let {
+            val source = getStringForLocaleCached(context, resId, Locale.US)
+            getTranslatedStringFromResources(context, resId)?.takeIf { it.isNotBlank() }?.let {
                 return it
             }
-            val source = getStringForLocaleCached(context, resId, Locale.US)
-            getLocalizedString(source)
+            getLocalizedString(source).ifBlank { source }
         } catch (e: Throwable) {
             LogCat.logException(e, "LocalizationHelper")
             context.getString(resId)
@@ -262,10 +262,11 @@ object LocalizationHelper {
     ): String {
         ensureLocaleState()
         return try {
-            getTranslatedStringFromResources(context, resId, *formatArgs)?.let {
+            val source = getStringForLocaleCached(context, resId, Locale.US, *formatArgs)
+            getTranslatedStringFromResources(context, resId, *formatArgs)?.takeIf { it.isNotBlank() }
+                ?.let {
                 return it
             }
-            val source = getStringForLocaleCached(context, resId, Locale.US, *formatArgs)
             getLocalizedString(source, *formatArgs)
         } catch (e: Throwable) {
             LogCat.logException(e, "LocalizationHelper")
@@ -275,19 +276,19 @@ object LocalizationHelper {
 
     private fun getLocalizedString(str: String): String {
         ensureLocaleState()
-        return read(Locale.US, AndroidContext.appLocale, str) ?: str
+        return read(Locale.US, AndroidContext.appLocale, str)?.takeIf { it.isNotBlank() } ?: str
     }
 
     private fun getLocalizedString(raw: String, vararg formatArgs: Any?): String {
         ensureLocaleState()
         return try {
             String.format(
-                read(Locale.US, AndroidContext.appLocale, raw) ?: raw,
+                read(Locale.US, AndroidContext.appLocale, raw)?.takeIf { it.isNotBlank() } ?: raw,
                 *formatArgs
             )
         } catch (e: Throwable) {
             LogCat.logException(e, "LocalizationHelper")
-            raw
+            String.format(raw, *formatArgs )
         }
     }
 
@@ -300,7 +301,7 @@ object LocalizationHelper {
         ExecutorHelper.startOnBackground {
             ensureLocaleState()
             val str = read(fromLang, toLang, text) ?: translate(text, fromLang, toLang).also {
-                if (!it.isNullOrEmpty() && it != text) {
+                if (it.isNotEmpty() && it != text) {
                     store(fromLang, toLang, text, it)
                 }
             }
@@ -407,6 +408,10 @@ object LocalizationHelper {
     private fun translate(text: String, fromLang: Locale, toLang: Locale): String {
         try {
             val parts = text.split(".")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            if (parts.isEmpty()) return text
+
             var sb = StringBuilder()
 
             parts.forEach {

@@ -278,25 +278,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
     private val oldIsBiometricReadyForUsage =
         BiometricManagerCompat.isBiometricSensorPermanentlyLocked(builder.getBiometricAuthRequest())
     private val impl: IBiometricPromptImpl by lazy {
-        val isBiometricPrompt =
-            builder.getBiometricAuthRequest().api == BiometricApi.BIOMETRIC_API ||
-                    if (builder.getBiometricAuthRequest().api == BiometricApi.AUTO && HardwareAccessImpl.getInstance(
-                            builder.getBiometricAuthRequest()
-                        ).isNewBiometricApi
-                    ) {
-                        var found = false
-                        for (v in builder.getPrimaryAvailableTypes()) {
-                            val request = builder.getBiometricAuthRequest()
-                                .withApi(BiometricApi.BIOMETRIC_API).withType(v)
-                            if (BiometricManagerCompat.isBiometricAvailable(request)) {
-                                found = true
-                                break
-                            }
-                        }
-                        found
-                    } else {
-                        false
-                    }
+        val isBiometricPrompt = shouldUseBiometricPromptImpl()
         BiometricLoggerImpl.d(
             "BiometricPromptCompat.IBiometricPromptImpl - " +
                     "$isBiometricPrompt"
@@ -555,9 +537,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
             BiometricLoggerImpl.e("BiometricPromptCompat.checkHardware - hasEnrolled")
             return AuthenticationFailureReason.NO_BIOMETRICS_REGISTERED
         } else if (!PermissionUtils.INSTANCE.hasSelfPermissions(
-                BiometricManagerCompat.getUsedPermissions(
-                    builder.getAllAvailableTypes()
-                )
+                getUsedPermissionsForSelectedModules()
             )
         ) {
             BiometricLoggerImpl.e("BiometricPromptCompat.checkHardware - missed permissions")
@@ -919,9 +899,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
     private fun checkPermissions(callback: AuthenticationCallback, authTask: () -> Unit) {
         BiometricLoggerImpl.e("BiometricPromptCompat.checkPermissions")
-        val permissionsMap = builder.getAllAvailableTypes().map {
-            Pair(it, BiometricManagerCompat.getUsedPermissions(listOf(it)))
-        }
+        val permissionsMap = getUsedPermissionsMapForSelectedModules()
 
         if (!PermissionUtils.INSTANCE.hasSelfPermissions(permissionsMap.flatMap { p -> p.second })) {
             BiometricLoggerImpl.d(
@@ -977,7 +955,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         BiometricLoggerImpl.e("BiometricPromptCompat.checkModulePreparation")
         LegacyBiometric.prepareSoftwareModulesForAuthentication(
             builder.getBiometricAuthRequest(),
-            builder.getAllAvailableTypes(),
+            getSoftwarePreparationTypes(),
             builder.enroll,
             object : AbstractSoftwareBiometricManager.PreparationCallback() {
                 override fun onPrepared() {
@@ -1036,9 +1014,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
     private fun checkSensor(callback: AuthenticationCallback, authTask: () -> Unit) {
 
-        val permissions = BiometricManagerCompat.getUsedPermissions(
-            builder.getAllAvailableTypes()
-        )
+        val permissions = getUsedPermissionsForSelectedModules()
         BiometricLoggerImpl.e("BiometricPromptCompat.checkSensor isCameraBlocked=${SensorPrivacyCheck.isCameraBlocked()}; $permissions")
         if (permissions.contains(Manifest.permission.CAMERA) && SensorPrivacyCheck.isCameraBlocked()) {
             SensorBlockedFallbackFragment.askForCameraUnblock(builder.getActivity() ?: run {
@@ -1073,6 +1049,74 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
             BiometricLoggerImpl.e("BiometricPromptCompat.checkSensor is not blocked")
             authTask.invoke()
         }
+    }
+
+    private fun shouldUseBiometricPromptImpl(): Boolean {
+        if (builder.getBiometricAuthRequest().api == BiometricApi.BIOMETRIC_API) {
+            return true
+        }
+
+        if (builder.getBiometricAuthRequest().provider == BiometricProviderType.SOFTWARE) {
+            return false
+        }
+
+        if (builder.getBiometricAuthRequest().api == BiometricApi.AUTO &&
+            !HardwareAccessImpl.getInstance(builder.getBiometricAuthRequest()).isNewBiometricApi
+        ) {
+            return false
+        }
+
+        return builder.getPrimaryAvailableTypes().any { type ->
+            val request = builder.getBiometricAuthRequest()
+                .withApi(BiometricApi.BIOMETRIC_API)
+                .withType(type)
+                .withProvider(BiometricProviderType.HARDWARE)
+            if (builder.enroll) {
+                BiometricManagerCompat.isBiometricReadyForEnroll(request)
+            } else {
+                BiometricManagerCompat.isBiometricAvailable(request)
+            }
+        }
+    }
+
+    private fun getUsedPermissionsMapForSelectedModules(): List<Pair<BiometricType, List<String>>> {
+        return builder.getAllAvailableTypes().map { type ->
+            val request = builder.getBiometricAuthRequest().withType(type)
+                .withProvider(getProviderForSelectedModule(type))
+            Pair(
+                type,
+                BiometricManagerCompat.getUsedPermissions(
+                    listOf(type),
+                    request,
+                    builder.enroll
+                )
+            )
+        }
+    }
+
+    private fun getUsedPermissionsForSelectedModules(): List<String> {
+        return getUsedPermissionsMapForSelectedModules()
+            .flatMap { it.second }
+            .distinct()
+    }
+
+    private fun getSoftwarePreparationTypes(): Set<BiometricType> {
+        return builder.getAllAvailableTypes()
+            .filterNot { type -> isPrimaryBiometricPromptHardwareType(type) }
+            .toSet()
+    }
+
+    private fun getProviderForSelectedModule(type: BiometricType): BiometricProviderType {
+        return if (isPrimaryBiometricPromptHardwareType(type)) {
+            BiometricProviderType.HARDWARE
+        } else {
+            builder.getBiometricAuthRequest().provider
+        }
+    }
+
+    private fun isPrimaryBiometricPromptHardwareType(type: BiometricType): Boolean {
+        return builder.getPrimaryAvailableTypes().contains(type) &&
+                shouldUseBiometricPromptImpl()
     }
 
 
