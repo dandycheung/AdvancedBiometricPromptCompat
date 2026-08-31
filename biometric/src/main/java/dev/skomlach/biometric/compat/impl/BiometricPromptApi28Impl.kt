@@ -53,6 +53,8 @@ import dev.skomlach.biometric.compat.biometricActivityDestroyedDescription
 import dev.skomlach.biometric.compat.biometricErrorWithCodeDescription
 import dev.skomlach.biometric.compat.biometricInternalErrorDescription
 import dev.skomlach.biometric.compat.normalizeBiometricErrorDescription
+import dev.skomlach.biometric.compat.shouldShowInitialCompatDialog
+import dev.skomlach.biometric.compat.shouldShowPostSystemCompatDialog
 import dev.skomlach.biometric.compat.biometricRequiredCryptoMissingDescription
 import dev.skomlach.biometric.compat.biometricRequiredCryptoRejectedDescription
 import dev.skomlach.biometric.compat.biometricStartAuthenticationDescription
@@ -116,6 +118,7 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
     }
 
     private val isOpened = AtomicBoolean(false)
+    private val systemPromptStarted = AtomicBoolean(false)
     private val authCallTimestamp = AtomicLong(0)
     private val pendingPromptCryptoObject = AtomicReference<BiometricCryptoObject?>(null)
     private val canceled = HashSet<AuthenticationResult>()
@@ -401,8 +404,20 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
         this.restartPredicate = defaultPredicate()
         this.authFinished.clear()
         this.biometricFragment.set(null)
+        this.systemPromptStarted.set(false)
         callback = cbk
-        if (DevicesWithKnownBugs.isMissedBiometricUI) {
+        val explicitSystemUiBug = DevicesWithKnownBugs.hasExplicitMissingBiometricUiBug
+        val heuristicReportsMissingUi = !explicitSystemUiBug &&
+                DevicesWithKnownBugs.isMissedBiometricUI
+        val hasSelectedSystemPromptRoute = builder.getPrimaryAvailableTypes().any { type ->
+            builder.selectedRoute(type)?.usesBiometricPromptHardware == true
+        }
+        if (shouldShowInitialCompatDialog(
+                explicitSystemUiBug = explicitSystemUiBug,
+                heuristicReportsMissingUi = heuristicReportsMissingUi,
+                hasSelectedSystemPromptRoute = hasSelectedSystemPromptRoute
+            )
+        ) {
             //1) LG G8 do not have BiometricPrompt UI
             //2) One Plus 6T with InScreen fingerprint sensor
             dialog = BiometricPromptCompatDialogImpl(
@@ -538,11 +553,13 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
                 pendingPromptCryptoObject.set(biometricCryptoObject)
                 authCallTimestamp.set(System.currentTimeMillis())
                 biometricPrompt.authenticate(biometricPromptInfo)
+                systemPromptStarted.set(true)
             } else if (crpObject != null) {
                 try {
                     pendingPromptCryptoObject.set(null)
                     authCallTimestamp.set(System.currentTimeMillis())
                     biometricPrompt.authenticate(biometricPromptInfo, crpObject)
+                    systemPromptStarted.set(true)
                 } catch (e: Throwable) {
                     e(
                         e,
@@ -559,6 +576,7 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
                             pendingPromptCryptoObject.set(fallbackCryptoObject)
                             authCallTimestamp.set(System.currentTimeMillis())
                             biometricPrompt.authenticate(biometricPromptInfo)
+                            systemPromptStarted.set(true)
                             return
                         }
                         checkAuthResult(
@@ -573,11 +591,13 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
                     }
                     authCallTimestamp.set(System.currentTimeMillis())
                     biometricPrompt.authenticate(biometricPromptInfo)
+                    systemPromptStarted.set(true)
                 }
             } else {
                 pendingPromptCryptoObject.set(null)
                 authCallTimestamp.set(System.currentTimeMillis())
                 biometricPrompt.authenticate(biometricPromptInfo)
+                systemPromptStarted.set(true)
             }
             ExecutorHelper.startOnBackground {
                 //fallback - sometimes we are not able to cancel BiometricPrompt properly
@@ -772,7 +792,11 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
             }
 
 
-        } else if (pendingLegacyTypes().isNotEmpty()) {
+        } else if (shouldShowPostSystemCompatDialog(
+                systemPromptStarted = systemPromptStarted.get(),
+                hasPendingLegacyRoute = pendingLegacyTypes().isNotEmpty()
+            )
+        ) {
             if (dialog == null) {
                 dialog =
                     BiometricPromptCompatDialogImpl(

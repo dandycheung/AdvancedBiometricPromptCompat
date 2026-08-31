@@ -163,6 +163,22 @@ internal data class Api28StartAuthStagePlan(
     val legacyAuthTypes: List<BiometricType>
 )
 
+internal fun shouldShowInitialCompatDialog(
+    explicitSystemUiBug: Boolean,
+    heuristicReportsMissingUi: Boolean,
+    hasSelectedSystemPromptRoute: Boolean
+): Boolean {
+    return explicitSystemUiBug ||
+            (heuristicReportsMissingUi && !hasSelectedSystemPromptRoute)
+}
+
+internal fun shouldShowPostSystemCompatDialog(
+    systemPromptStarted: Boolean,
+    hasPendingLegacyRoute: Boolean
+): Boolean {
+    return !systemPromptStarted && hasPendingLegacyRoute
+}
+
 internal fun planApi28StartAuthStage(
     remainingPrimaryTypes: Collection<BiometricType>,
     remainingSecondaryTypes: Collection<BiometricType>,

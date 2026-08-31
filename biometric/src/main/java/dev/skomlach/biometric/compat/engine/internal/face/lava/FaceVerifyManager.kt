@@ -24,6 +24,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.*
+import dev.skomlach.biometric.compat.engine.internal.ServiceBindingState
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl
 import dev.skomlach.common.misc.SettingsHelper
 
@@ -37,6 +38,7 @@ internal class FaceVerifyManager(private val mContext: Context) {
 
     private var mIFaceVerifyService: IFaceVerifyService? = null
     private var isBinded = false
+    private val serviceBindingState = ServiceBindingState()
     private var mFaceUnlockCallback: FaceUnlockCallback? = null
     private var mHandler: Handler?
     private val mMainThread: HandlerThread = HandlerThread(TAG).apply {
@@ -45,7 +47,7 @@ internal class FaceVerifyManager(private val mContext: Context) {
             override fun handleMessage(msg: Message) {
                 if (msg.what == VERIFY_MSG) {
                     val result = msg.arg1
-                    val resultStr = msg.obj as String
+                    val resultStr = msg.obj as? String
                     mFaceUnlockCallback?.onFaceVerifyChanged(result, resultStr)
 
                 }
@@ -78,6 +80,7 @@ internal class FaceVerifyManager(private val mContext: Context) {
         }
 
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            if (!serviceBindingState.isBindingActive()) return
             BiometricLoggerImpl.d(TAG, "onServiceConnected start")
             mIFaceVerifyService = IFaceVerifyService.Stub.asInterface(service)
             if (null != mIFaceVerifyService) {
@@ -100,6 +103,8 @@ internal class FaceVerifyManager(private val mContext: Context) {
     fun bindFaceVerifyService() {
         if (isBinded) {
             startFaceVerify()
+        } else if (serviceBindingState.isBindingActive()) {
+            BiometricLoggerImpl.d(TAG, "bindFaceVerifyService already waiting for connection")
         } else {
             BiometricLoggerImpl.d(TAG, "bindFaceVerifyService start")
             val intent = Intent()
@@ -108,7 +113,16 @@ internal class FaceVerifyManager(private val mContext: Context) {
                 "com.sensetime.faceunlock.service.PrizeFaceDetectService"
             )
             intent.component = cn
-            mContext.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+            val bindAccepted = try {
+                mContext.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+            } catch (e: Exception) {
+                BiometricLoggerImpl.e(e)
+                false
+            }
+            serviceBindingState.recordBindResult(bindAccepted)
+            if (!bindAccepted) {
+                BiometricLoggerImpl.d(TAG, "bindFaceVerifyService rejected")
+            }
             BiometricLoggerImpl.d(TAG, "bindFaceVerifyService end")
         }
     }
@@ -116,13 +130,19 @@ internal class FaceVerifyManager(private val mContext: Context) {
     fun unbindFaceVerifyService() {
         BiometricLoggerImpl.d(
             TAG,
-            "unbindLavaVoiceService start  isBinded = $isBinded"
+            "unbindFaceVerifyService start isBinded = $isBinded"
         )
-        if (isBinded) {
-            mContext.unbindService(conn)
-            mIFaceVerifyService = null
-            isBinded = false
+        if (serviceBindingState.consumeUnbindRequest()) {
+            try {
+                mContext.unbindService(conn)
+            } catch (e: IllegalArgumentException) {
+                BiometricLoggerImpl.e(e)
+            } catch (e: SecurityException) {
+                BiometricLoggerImpl.e(e)
+            }
         }
+        mIFaceVerifyService = null
+        isBinded = false
         BiometricLoggerImpl.d(TAG, "unbindFaceVerifyService end")
     }
 
@@ -143,10 +163,8 @@ internal class FaceVerifyManager(private val mContext: Context) {
             } catch (e: RemoteException) {
                 BiometricLoggerImpl.e(e)
             }
-            if (isBinded && !isFaceUnlockOn) {
-                unbindFaceVerifyService()
-            }
         }
+        unbindFaceVerifyService()
     }
 
     fun setFaceUnlockCallback(callback: FaceUnlockCallback?) {

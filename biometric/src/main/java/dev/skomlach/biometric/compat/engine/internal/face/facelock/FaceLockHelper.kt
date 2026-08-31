@@ -84,7 +84,7 @@ class FaceLockHelper(private val faceLockInterface: FaceLockInterface) {
 
 
     fun destroy() {
-
+        stopFaceLock()
         targetView = null
         mCallback = null
         mServiceConnection = null
@@ -267,11 +267,11 @@ class FaceLockHelper(private val faceLockInterface: FaceLockInterface) {
             }
             mFaceLockServiceRunning = false
         }
+        mFaceLock?.unbind()
         if (mBoundToFaceLockService) {
-            mFaceLock?.unbind()
             d(TAG + ".FaceId.unbind()")
-            mBoundToFaceLockService = false
         }
+        mBoundToFaceLockService = false
 
     }
 

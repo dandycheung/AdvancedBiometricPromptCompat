@@ -81,6 +81,15 @@ object DevicesWithKnownBugs {
         get() {
             return checkForVendor("OnePlus", ignoreCase = true)
         }
+
+    val hasExplicitMissingBiometricUiBug: Boolean
+        get() {
+            return (checkForVendor("LG", ignoreCase = false) &&
+                    lgWithMissedBiometricUI.any { knownModel ->
+                        Build.MODEL.contains(knownModel, ignoreCase = true)
+                    }) || isOnePlusWithBiometricBug
+        }
+
     val isMissedBiometricUI: Boolean
         get() {
             val ts = "isMissedBiometricUI-${Build.FINGERPRINT}"
@@ -94,16 +103,7 @@ object DevicesWithKnownBugs {
                     if (it.startsWith("isMissedBiometricUI-"))
                         edit.remove(it)
                 }
-                val value =
-                    (checkForVendor("LG", ignoreCase = false) &&
-                            listOf(*lgWithMissedBiometricUI).any { knownModel ->
-                                Build.MODEL.contains(
-                                    knownModel,
-                                    ignoreCase = true
-                                )
-                            }) || isOnePlusWithBiometricBug || !CheckBiometricUI.hasExists(
-                        appContext
-                    )
+                val value = hasExplicitMissingBiometricUiBug || !CheckBiometricUI.hasExists(appContext)
                 cached = "$value"
                 edit
                     .putString(ts, cached).apply()

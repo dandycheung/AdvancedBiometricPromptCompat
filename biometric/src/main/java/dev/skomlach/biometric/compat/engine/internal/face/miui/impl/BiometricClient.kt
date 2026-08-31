@@ -23,6 +23,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -31,6 +32,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import dev.skomlach.biometric.compat.engine.internal.ServiceBindingState
 import dev.skomlach.biometric.compat.engine.internal.face.miui.impl.wrapper.BiometricConnect
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.d
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.e
@@ -70,6 +72,7 @@ class BiometricClient {
     private var mServiceCallback: ServiceCallback? = null
     private var mServiceConnectStatus = 0
     private var mServiceConnection: MyServiceConnection? = null
+    private val serviceBindingState = ServiceBindingState()
     private var mTagInfo: String? = null
     private var replayReadyLatch_: CountDownLatch? = null
     private var serviceReadyLatch_: CountDownLatch? = null
@@ -359,13 +362,23 @@ class BiometricClient {
         accessLock_.runCatching { this.lock() }
         mServiceConnectStatus = 1
         serviceReadyLatch_ = CountDownLatch(1)
+        val servicePackage = resolveMiuiServicePackage(
+            reflectedPackage = BiometricConnect.SERVICE_PACKAGE_NAME,
+            hasMiuiFacePackage = isMiuiFacePackageInstalled()
+        )
+        if (servicePackage == null) {
+            d(str2, ":$mTagInfo:handle_startService - no explicit MIUI service package")
+            mServiceConnectStatus = SERVICE_STATUS_CONNECTING_ERROR
+            accessLock_.runCatching { this.unlock() }
+            return
+        }
         val intent = Intent("com.xiaomi.biometric.BiometricService")
-        intent.setPackage(BiometricConnect.SERVICE_PACKAGE_NAME)
+        intent.setPackage(servicePackage)
         mServiceConnection = MyServiceConnection()
-        try {
+        val bindAccepted = try {
             mServiceConnection?.let {
                 context.bindService(intent, it, 65)
-            }
+            } == true
         } catch (e: Exception) {
             stringBuilder = StringBuilder()
             stringBuilder.append(str)
@@ -373,6 +386,15 @@ class BiometricClient {
             stringBuilder.append(":handle_startService - bindService Exception ERROR: ")
             stringBuilder.append(e)
             d(str2, stringBuilder.toString())
+            false
+        }
+        serviceBindingState.recordBindResult(bindAccepted)
+        if (!shouldAwaitMiuiServiceConnection(bindAccepted)) {
+            d(str2, ":$mTagInfo:handle_startService - bindService rejected")
+            mServiceConnection = null
+            mServiceConnectStatus = SERVICE_STATUS_CONNECTING_ERROR
+            accessLock_.runCatching { this.unlock() }
+            return
         }
         accessLock_.runCatching {
             this.unlock()
@@ -396,6 +418,7 @@ class BiometricClient {
                 accessLock_.runCatching {
                     this.unlock()
                 }
+                unbindMiuiServiceIfRequested()
             }
         } catch (e2: Exception) {
             stringBuilder = StringBuilder()
@@ -448,32 +471,7 @@ class BiometricClient {
         if (4 != mServiceConnectStatus) {
             onServiceUnbind(false)
         }
-        try {
-            mServiceConnection?.let {
-                context.unbindService(it)
-            }
-        } catch (e: IllegalArgumentException) {
-            stringBuilder = StringBuilder()
-            stringBuilder.append(str2)
-            stringBuilder.append(mTagInfo)
-            stringBuilder.append(":handle_releaseService IllegalArgumentException:")
-            stringBuilder.append(e.toString())
-            d(str3, stringBuilder.toString())
-        } catch (e2: NullPointerException) {
-            stringBuilder = StringBuilder()
-            stringBuilder.append(str2)
-            stringBuilder.append(mTagInfo)
-            stringBuilder.append(":handle_releaseService NullPointerException:")
-            stringBuilder.append(e2.toString())
-            d(str3, stringBuilder.toString())
-        } catch (e3: Exception) {
-            stringBuilder = StringBuilder()
-            stringBuilder.append(str2)
-            stringBuilder.append(mTagInfo)
-            stringBuilder.append(":handle_releaseService Exception:")
-            stringBuilder.append(e3.toString())
-            d(str3, stringBuilder.toString())
-        }
+        unbindMiuiServiceIfRequested()
         mServiceConnectStatus = 5
         mServiceConnection = null
         release()
@@ -486,6 +484,30 @@ class BiometricClient {
             stringBuilder2.append(mTagInfo)
             stringBuilder2.append(":handle_releaseService end")
             d(str3, stringBuilder2.toString())
+        }
+    }
+
+    private fun isMiuiFacePackageInstalled(): Boolean {
+        return try {
+            context.packageManager.getApplicationInfo(MIUI_FACE_SERVICE_PACKAGE, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    private fun unbindMiuiServiceIfRequested() {
+        if (!serviceBindingState.consumeUnbindRequest()) return
+        try {
+            mServiceConnection?.let {
+                context.unbindService(it)
+            }
+        } catch (e: IllegalArgumentException) {
+            d(LOG_TAG, ":$mTagInfo:unbindMiuiService IllegalArgumentException: $e")
+        } catch (e: SecurityException) {
+            d(LOG_TAG, ":$mTagInfo:unbindMiuiService SecurityException: $e")
+        } finally {
+            mServiceConnection = null
         }
     }
 
@@ -850,6 +872,7 @@ class BiometricClient {
 
     private inner class MyServiceConnection : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            if (!serviceBindingState.isBindingActive()) return
             val stringBuilder = StringBuilder()
             stringBuilder.append(":")
             stringBuilder.append(mTagInfo)
@@ -860,6 +883,7 @@ class BiometricClient {
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
+            if (!serviceBindingState.isBindingActive()) return
             val stringBuilder = StringBuilder()
             stringBuilder.append(":")
             stringBuilder.append(mTagInfo)

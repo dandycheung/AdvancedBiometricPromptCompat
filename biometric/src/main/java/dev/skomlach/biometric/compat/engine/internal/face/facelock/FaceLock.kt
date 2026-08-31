@@ -32,6 +32,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.Parcel
 import android.os.RemoteException
+import dev.skomlach.biometric.compat.engine.internal.ServiceBindingState
 import dev.skomlach.biometric.compat.utils.LockType.isBiometricWeakLivelinessEnabled
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.d
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.e
@@ -51,6 +52,7 @@ class FaceLock {
     private var flCallbackInterface: Class<*>? = null
     private var flCallbackInterfaceStub: Class<*>? = null
     private val pkg = "com.android.facelock"
+    private val serviceBindingState = ServiceBindingState()
 
     private val context = AndroidContext.appContext
 
@@ -87,22 +89,36 @@ class FaceLock {
 
     fun bind(connection: ServiceConnection): Boolean {
         d(TAG + " bind to service")
+        if (serviceBindingState.isBindingActive()) return true
         try {
             if (mServiceConnection == null)
                 mServiceConnection = ServiceConnectionWrapper(connection)
             val intent = Intent()
             intent.setPackage(pkg)
-            return context
+            val bindAccepted = context
                 .bindService(intent, mServiceConnection ?: return false, Context.BIND_AUTO_CREATE)
+            serviceBindingState.recordBindResult(bindAccepted)
+            if (!bindAccepted) mServiceConnection = null
+            return bindAccepted
         } catch (e: Throwable) {
+            serviceBindingState.recordBindResult(false)
+            mServiceConnection = null
             return false
         }
     }
 
     fun unbind() {
         d(TAG + " unbind from service")
-        mServiceConnection?.let {
-            context.unbindService(it)
+        if (serviceBindingState.consumeUnbindRequest()) {
+            try {
+                mServiceConnection?.let {
+                    context.unbindService(it)
+                }
+            } catch (e: IllegalArgumentException) {
+                e(e, TAG + " unbind failed")
+            } catch (e: SecurityException) {
+                e(e, TAG + " unbind failed")
+            }
         }
         mServiceConnection = null
     }

@@ -63,6 +63,34 @@ class SelectedBiometricRouteResolverTest {
     }
 
     @Test
+    fun `legacy MIUI face route avoids a software camera fallback`() {
+        val miuiHardwareRoute = SelectedBiometricRoute(
+            type = BiometricType.BIOMETRIC_FACE,
+            provider = BiometricProviderType.HARDWARE,
+            usesBiometricPromptHardware = false,
+            permissions = emptyList()
+        )
+        val softwareFallbackRoute = SelectedBiometricRoute(
+            type = BiometricType.BIOMETRIC_FACE,
+            provider = BiometricProviderType.SOFTWARE,
+            usesBiometricPromptHardware = false,
+            permissions = listOf(Manifest.permission.CAMERA)
+        )
+
+        val route = pickSelectedBiometricRoute(
+            requestApi = BiometricApi.AUTO,
+            preferSystemFaceHardware = false,
+            preferHighPrioritySoftware = false,
+            biometricPromptRoute = null,
+            legacyHardwareRoute = miuiHardwareRoute,
+            fallbackRoute = softwareFallbackRoute
+        )
+
+        assertEquals(miuiHardwareRoute, route)
+        assertFalse(route!!.permissions.contains(Manifest.permission.CAMERA))
+    }
+
+    @Test
     fun `hardware face route is kept for enroll filtering`() {
         val route = SelectedBiometricRoute(
             type = BiometricType.BIOMETRIC_FACE,

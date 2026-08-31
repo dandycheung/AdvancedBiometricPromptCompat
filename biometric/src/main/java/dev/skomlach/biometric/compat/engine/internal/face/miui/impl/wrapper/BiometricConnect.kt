@@ -20,6 +20,7 @@
 package dev.skomlach.biometric.compat.engine.internal.face.miui.impl.wrapper
 
 import android.os.Parcelable
+import dev.skomlach.biometric.compat.engine.internal.face.miui.impl.shouldReadOptionalMiuiMessageFields
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl.e
 
 object BiometricConnect {
@@ -53,60 +54,77 @@ object BiometricConnect {
     private var dbgroupClass: Class<*>? = null
 
     init {
-        try {
-            clazz = Class.forName("android.miui.BiometricConnect")
-            dbtemplateClass = Class.forName("android.miui.BiometricConnect\$DBTemplate")
-            dbgroupClass = Class.forName("android.miui.BiometricConnect\$DBGroup")
-            DEBUG_LOG = clazz?.getField("DEBUG_LOG")?.getBoolean(null) == true
-            MSG_VER_SER_MAJ = clazz?.getField("MSG_VER_SER_MAJ")?.get(null) as String?
-            MSG_VER_SER_MIN = clazz?.getField("MSG_VER_SER_MIN")?.get(null) as String?
-            MSG_VER_MODULE_MAJ = clazz?.getField("MSG_VER_MODULE_MAJ")?.get(null) as String?
-            MSG_VER_MODULE_MIN = clazz?.getField("MSG_VER_MODULE_MIN")?.get(null) as String?
-            MSG_REPLY_MODULE_ID = clazz?.getField("MSG_REPLY_MODULE_ID")?.get(null) as String?
-            MSG_REPLY_NO_SEND_WAIT = clazz?.getField("MSG_REPLY_NO_SEND_WAIT")?.get(null) as String?
-            MSG_REPLY_ARG1 = clazz?.getField("MSG_REPLY_ARG1")?.get(null) as String?
-            MSG_REPLY_ARG2 = clazz?.getField("MSG_REPLY_ARG2")?.get(null) as String?
-            SERVICE_PACKAGE_NAME = clazz?.getField("SERVICE_PACKAGE_NAME")?.get(null) as String?
-            MSG_CB_BUNDLE_DB_TEMPLATE_ID_MAX =
-                clazz?.getField("MSG_CB_BUNDLE_DB_TEMPLATE_ID_MAX")?.get(null) as String?
-            MSG_CB_BUNDLE_DB_GROUP_ID_MAX =
-                clazz?.getField("MSG_CB_BUNDLE_DB_GROUP_ID_MAX")?.get(null) as String?
-            MSG_CB_BUNDLE_DB_TEMPLATE =
-                clazz?.getField("MSG_CB_BUNDLE_DB_TEMPLATE")?.get(null) as String?
-            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_ZONE =
-                clazz?.getField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_ZONE")?.get(null) as String?
-            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_FACE =
-                clazz?.getField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_FACE")?.get(null) as String?
-            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DISTANCE =
-                clazz?.getField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DISTANCE")?.get(null) as String?
-            MSG_CB_BUNDLE_ENROLL_PARAM_WAITING_UI =
-                clazz?.getField("MSG_CB_BUNDLE_ENROLL_PARAM_WAITING_UI")?.get(null) as String?
-            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DEPTHMAP =
-                clazz?.getField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DEPTHMAP")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_IS_IR =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_IS_IR")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_HAS_FACE =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_HAS_FACE")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_RECT_BOUND =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_RECT_BOUND")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_FLOAT_YAW =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_FLOAT_YAW")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_FLOAT_ROLL =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_FLOAT_ROLL")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_FLOAT_EYE_DIST =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_FLOAT_EYE_DIST")?.get(null) as String?
-            MSG_CB_BUNDLE_FACE_POINTS_ARRAY =
-                clazz?.getField("MSG_CB_BUNDLE_FACE_POINTS_ARRAY")?.get(null) as String?
-        } catch (ignored: ClassNotFoundException) {
-        } catch (ignored: NoSuchFieldException) {
-        } catch (e: Throwable) {
-            e(e)
+        clazz = loadClass("android.miui.BiometricConnect")
+        SERVICE_PACKAGE_NAME = readStringField("SERVICE_PACKAGE_NAME")
+        if (
+            shouldReadOptionalMiuiMessageFields()
+        ) {
+            dbtemplateClass = loadClass("android.miui.BiometricConnect\$DBTemplate")
+            dbgroupClass = loadClass("android.miui.BiometricConnect\$DBGroup")
+            DEBUG_LOG = readBooleanField("DEBUG_LOG")
+            MSG_VER_SER_MAJ = readStringField("MSG_VER_SER_MAJ")
+            MSG_VER_SER_MIN = readStringField("MSG_VER_SER_MIN")
+            MSG_VER_MODULE_MAJ = readStringField("MSG_VER_MODULE_MAJ")
+            MSG_VER_MODULE_MIN = readStringField("MSG_VER_MODULE_MIN")
+            MSG_REPLY_MODULE_ID = readStringField("MSG_REPLY_MODULE_ID")
+            MSG_REPLY_NO_SEND_WAIT = readStringField("MSG_REPLY_NO_SEND_WAIT")
+            MSG_REPLY_ARG1 = readStringField("MSG_REPLY_ARG1")
+            MSG_REPLY_ARG2 = readStringField("MSG_REPLY_ARG2")
+            MSG_CB_BUNDLE_DB_TEMPLATE_ID_MAX = readStringField("MSG_CB_BUNDLE_DB_TEMPLATE_ID_MAX")
+            MSG_CB_BUNDLE_DB_GROUP_ID_MAX = readStringField("MSG_CB_BUNDLE_DB_GROUP_ID_MAX")
+            MSG_CB_BUNDLE_DB_TEMPLATE = readStringField("MSG_CB_BUNDLE_DB_TEMPLATE")
+            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_ZONE = readStringField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_ZONE")
+            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_FACE = readStringField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_FACE")
+            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DISTANCE = readStringField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DISTANCE")
+            MSG_CB_BUNDLE_ENROLL_PARAM_WAITING_UI = readStringField("MSG_CB_BUNDLE_ENROLL_PARAM_WAITING_UI")
+            MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DEPTHMAP = readStringField("MSG_CB_BUNDLE_ENROLL_PARAM_DETECT_DEPTHMAP")
+            MSG_CB_BUNDLE_FACE_IS_IR = readStringField("MSG_CB_BUNDLE_FACE_IS_IR")
+            MSG_CB_BUNDLE_FACE_HAS_FACE = readStringField("MSG_CB_BUNDLE_FACE_HAS_FACE")
+            MSG_CB_BUNDLE_FACE_RECT_BOUND = readStringField("MSG_CB_BUNDLE_FACE_RECT_BOUND")
+            MSG_CB_BUNDLE_FACE_FLOAT_YAW = readStringField("MSG_CB_BUNDLE_FACE_FLOAT_YAW")
+            MSG_CB_BUNDLE_FACE_FLOAT_ROLL = readStringField("MSG_CB_BUNDLE_FACE_FLOAT_ROLL")
+            MSG_CB_BUNDLE_FACE_FLOAT_EYE_DIST = readStringField("MSG_CB_BUNDLE_FACE_FLOAT_EYE_DIST")
+            MSG_CB_BUNDLE_FACE_POINTS_ARRAY = readStringField("MSG_CB_BUNDLE_FACE_POINTS_ARRAY")
+        }
+    }
+
+    private fun loadClass(className: String): Class<*>? {
+        return try {
+            Class.forName(className)
+        } catch (_: ClassNotFoundException) {
+            null
+        } catch (throwable: Throwable) {
+            e(throwable)
+            null
+        }
+    }
+
+    private fun readBooleanField(fieldName: String): Boolean {
+        return try {
+            clazz?.getField(fieldName)?.getBoolean(null) == true
+        } catch (_: NoSuchFieldException) {
+            false
+        } catch (throwable: Throwable) {
+            e(throwable)
+            false
+        }
+    }
+
+    private fun readStringField(fieldName: String): String? {
+        return try {
+            clazz?.getField(fieldName)?.get(null) as? String
+        } catch (_: NoSuchFieldException) {
+            null
+        } catch (throwable: Throwable) {
+            e(throwable)
+            null
         }
     }
 
     fun syncDebugLog() {
         try {
             clazz?.getMethod("syncDebugLog")?.invoke(null)
+        } catch (_: NoSuchMethodException) {
         } catch (e: Throwable) {
             e(e)
         }
