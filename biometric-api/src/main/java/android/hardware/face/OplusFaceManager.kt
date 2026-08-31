@@ -1,13 +1,11 @@
 package android.hardware.face
 
+import android.content.Context
 import android.os.CancellationSignal
 import android.os.Handler
 import android.hardware.biometrics.CryptoObject
-import android.os.Build
-import androidx.annotation.RequiresApi
 
-@RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
-class OplusFaceManager {
+class OplusFaceManager(@Suppress("UNUSED_PARAMETER") context: Context) {
     fun cancelAONAuthentication(cryptoObject: CryptoObject?) {
 
     }
@@ -54,7 +52,7 @@ class OplusFaceManager {
     }
 
     abstract class OplusAuthenticationCallback {
-        fun onAuthenticationAcquired(i: Int) {}
+        open fun onAuthenticationAcquired(i: Int) {}
         open fun onAuthenticationError(i: Int, charSequence: CharSequence?) {}
         open fun onAuthenticationFailed() {}
         open fun onAuthenticationHelp(i: Int, charSequence: CharSequence?) {}

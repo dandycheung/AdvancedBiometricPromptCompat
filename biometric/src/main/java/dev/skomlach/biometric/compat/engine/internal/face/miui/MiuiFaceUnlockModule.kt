@@ -39,6 +39,13 @@ import dev.skomlach.common.misc.ExecutorHelper
 import java.util.concurrent.TimeUnit
 
 
+internal object MiuiFaceErrorPolicy {
+    fun isCancellation(errorCode: Int): Boolean {
+        val normalizedErrorCode = if (errorCode < 1000) errorCode else errorCode % 1000
+        return errorCode == 2000 || normalizedErrorCode == 34
+    }
+}
+
 class MiuiFaceUnlockModule @SuppressLint("WrongConstant") constructor(listener: LegacyBiometricInitListener?) :
     AbstractBiometricModule(BiometricMethod.FACE_MIUI) {
     private var manager: IMiuiFaceManager? = null
@@ -193,11 +200,17 @@ class MiuiFaceUnlockModule @SuppressLint("WrongConstant") constructor(listener: 
             var failureReason = AuthenticationFailureReason.UNKNOWN
 
             //See IMiuiFaceManagerImpl.getMessageInfo()
+            if (MiuiFaceErrorPolicy.isCancellation(errMsgId)) {
+                listener?.onCanceled(
+                    tag(),
+                    AuthenticationFailureReason.CANCELED,
+                    errString
+                )
+                Core.cancelAuthentication(this@MiuiFaceUnlockModule)
+                return
+            }
+
             when (if (errMsgId < 1000) errMsgId else errMsgId % 1000) {
-                34, 2000 -> {
-                    //canceled
-                    return
-                }
 
                 11 -> failureReason =
                     AuthenticationFailureReason.NO_BIOMETRICS_REGISTERED

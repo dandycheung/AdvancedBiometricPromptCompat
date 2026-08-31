@@ -506,6 +506,7 @@ object LegacyBiometric {
                 reason: AuthenticationFailureReason?,
                 desc: CharSequence?
             ) {
+                authInProgress.set(false)
                 listenerRef.get()?.onCanceled(
                     AuthenticationResult(
                         activeModules[tag],
