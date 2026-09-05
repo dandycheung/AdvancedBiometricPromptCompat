@@ -23,14 +23,13 @@ internal class VoiceStreamingDetector(
     private val cachedChunks = ArrayList<FloatArray>()
     private val cachedInputRmsValues = ArrayList<Float>()
     private val cachedConditionedRmsValues = ArrayList<Float>()
-    private val cachedChunkEndOffsets = ArrayList<Int>()
     private val sortedInputRmsValues = ArrayList<Float>()
     private val sortedConditionedRmsValues = ArrayList<Float>()
-    private var cachedSampleStart = -1
-    private var cachedSampleEndExclusive = -1
-    private var cachedSample: FloatArray? = null
 
-    fun detect(chunks: List<FloatArray>): VoiceStreamingDetection {
+    fun detect(
+        chunks: List<FloatArray>,
+        materializeActiveSample: Boolean = true
+    ): VoiceStreamingDetection {
         if (chunks.isEmpty() || sampleRateHz <= 0) {
             return VoiceStreamingDetection(
                 detectedSpeech = false,
@@ -68,7 +67,11 @@ internal class VoiceStreamingDetector(
                 activeSample = null
             )
 
-        val activeSample = sampleSlice(chunks, speechWindow)
+        val activeSample = if (speechWindow.isComplete || materializeActiveSample) {
+            sampleSlice(chunks, speechWindow)
+        } else {
+            null
+        }
         if (speechWindow.isComplete) {
             return VoiceStreamingDetection(
                 detectedSpeech = true,
@@ -199,7 +202,6 @@ internal class VoiceStreamingDetector(
             cachedChunks += chunk
             cachedInputRmsValues += conditioned.inputRms
             cachedConditionedRmsValues += conditioned.conditionedRms
-            cachedChunkEndOffsets += (cachedChunkEndOffsets.lastOrNull() ?: 0) + chunk.size
             insertSortedInputRms(conditioned.inputRms)
             insertSortedConditionedRms(conditioned.conditionedRms)
         }
@@ -219,12 +221,8 @@ internal class VoiceStreamingDetector(
         cachedChunks.clear()
         cachedInputRmsValues.clear()
         cachedConditionedRmsValues.clear()
-        cachedChunkEndOffsets.clear()
         sortedInputRmsValues.clear()
         sortedConditionedRmsValues.clear()
-        cachedSampleStart = -1
-        cachedSampleEndExclusive = -1
-        cachedSample = null
     }
 
     private fun insertSortedInputRms(value: Float) {
@@ -247,29 +245,29 @@ internal class VoiceStreamingDetector(
         return (sum / quietFrameCount).toFloat()
     }
 
-    private fun sampleSlice(chunks: List<FloatArray>, speechWindow: SpeechWindow): FloatArray? {
+    private fun sampleSlice(
+        chunks: List<FloatArray>,
+        speechWindow: SpeechWindow
+    ): FloatArray? {
         if (speechWindow.startIndex < 0 || speechWindow.endExclusive <= speechWindow.startIndex) {
-            cachedSampleStart = -1
-            cachedSampleEndExclusive = -1
-            cachedSample = null
             return null
         }
-        cachedSample?.let { sample ->
-            if (cachedSampleStart == speechWindow.startIndex && cachedSampleEndExclusive == speechWindow.endExclusive) {
-                return sample
-            }
-        }
-        val flattened = flattenChunks(chunks, speechWindow.startIndex, speechWindow.endExclusive)
-        cachedSampleStart = speechWindow.startIndex
-        cachedSampleEndExclusive = speechWindow.endExclusive
-        cachedSample = flattened
-        return flattened
+        return flattenChunks(
+            chunks,
+            speechWindow.startIndex,
+            speechWindow.endExclusive
+        )
     }
 
-    private fun flattenChunks(chunks: List<FloatArray>, startIndex: Int, endExclusive: Int): FloatArray {
-        val prefixEnd = cachedChunkEndOffsets[endExclusive - 1]
-        val prefixStart = if (startIndex > 0) cachedChunkEndOffsets[startIndex - 1] else 0
-        val length = prefixEnd - prefixStart
+    private fun flattenChunks(
+        chunks: List<FloatArray>,
+        startIndex: Int,
+        endExclusive: Int
+    ): FloatArray {
+        var length = 0
+        for (index in startIndex until endExclusive) {
+            length += chunks[index].size
+        }
         val flattened = FloatArray(length)
         var offset = 0
         for (index in startIndex until endExclusive) {

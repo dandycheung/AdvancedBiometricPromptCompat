@@ -49,7 +49,7 @@ class WindowBackgroundBlurring(
     private var v: View? = null
     private var renderEffect: RenderEffect? = null
     private var isBlurViewAttachedToHost = false
-    private var drawingInProgress = false
+    private val captureLatch = BlurCaptureLatch()
     private var biometricsLayout: View? = null
     private val lifecycleEventObserver = object :
         LifecycleEventObserver {
@@ -75,26 +75,45 @@ class WindowBackgroundBlurring(
     }
 
     private fun updateBackground() {
-        if (!isBlurViewAttachedToHost || drawingInProgress)
+        if (!isBlurViewAttachedToHost)
             return
+        if (!shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+            setDrawable(null)
+            return
+        }
+        val captureTarget = contentView ?: return
+        if (captureTarget.width <= 0 || captureTarget.height <= 0) return
+        val captureToken = captureLatch.tryStart() ?: return
+        ExecutorHelper.postDelayed(
+            { captureLatch.finish(captureToken) },
+            BLUR_CAPTURE_TIMEOUT_MS
+        )
         BiometricLoggerImpl.d("${this.javaClass.name}.updateBackground")
         try {
-            contentView?.let {
-                BlurUtil.takeScreenshotAndBlur(it) { _, blurredBitmap ->
+            BlurUtil.takeScreenshotAndBlur(captureTarget) { originalBitmap, blurredBitmap ->
+                if (captureLatch.finish(captureToken)) {
                     setDrawable(blurredBitmap)
+                    if (originalBitmap !== blurredBitmap && !originalBitmap.isRecycled) {
+                        originalBitmap.recycle()
+                    }
+                } else {
+                    if (!originalBitmap.isRecycled) originalBitmap.recycle()
+                    if (blurredBitmap !== originalBitmap && blurredBitmap?.isRecycled == false) {
+                        blurredBitmap.recycle()
+                    }
                 }
             }
         } catch (e: Throwable) {
+            captureLatch.finish(captureToken)
             BiometricLoggerImpl.e(e)
         }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setDrawable(bm: Bitmap?) {
-        if (!isBlurViewAttachedToHost || drawingInProgress)
+        if (!isBlurViewAttachedToHost)
             return
         BiometricLoggerImpl.d("${this.javaClass.name}.setDrawable")
-        drawingInProgress = true
         try {
             v?.let {
                 if (Utils.isAtLeastS) {
@@ -138,22 +157,25 @@ class WindowBackgroundBlurring(
         } catch (e: Throwable) {
             BiometricLoggerImpl.e(e)
         }
-        ExecutorHelper.post {
-            drawingInProgress = false
-        }
     }
 
     fun setupListeners() {
         if (isBlurViewAttachedToHost) return
         isBlurViewAttachedToHost = true
         try {
-            updateBackground()
+            if (shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+                updateBackground()
+            } else {
+                setDrawable(null)
+            }
             parentView.doOnAttach {
                 parentView.findViewTreeLifecycleOwner()?.lifecycle?.addObserver(
                     lifecycleEventObserver
                 )
             }
-            parentView.viewTreeObserver.addOnPreDrawListener(onDrawListener)
+            if (shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+                parentView.viewTreeObserver.addOnPreDrawListener(onDrawListener)
+            }
         } catch (e: Throwable) {
             BiometricLoggerImpl.e(e)
         }
@@ -162,35 +184,45 @@ class WindowBackgroundBlurring(
     }
 
     fun resetListeners() {
-        if (!isBlurViewAttachedToHost) return
+        val wasAttached = isBlurViewAttachedToHost
         isBlurViewAttachedToHost = false
-        try {
-            parentView.viewTreeObserver.removeOnPreDrawListener(onDrawListener)
-            parentView.findViewTreeLifecycleOwner()?.lifecycle?.removeObserver(
-                lifecycleEventObserver
-            )
-        } catch (e: Throwable) {
-            BiometricLoggerImpl.e(e)
-        }
-        try {
-            v?.let {
-                parentView.removeView(it)
-            }
-            parentView.findViewWithTag<View?>(this@WindowBackgroundBlurring.javaClass.name)?.let {
-                parentView.removeView(it)
-            }
-        } catch (e: Throwable) {
-            BiometricLoggerImpl.e(e)
-        } finally {
+        captureLatch.reset()
+        if (wasAttached) {
             try {
-                if (Utils.isAtLeastS) {
-                    contentView?.setRenderEffect(null)
-                }
+                parentView.viewTreeObserver.removeOnPreDrawListener(onDrawListener)
+                parentView.findViewTreeLifecycleOwner()?.lifecycle?.removeObserver(
+                    lifecycleEventObserver
+                )
             } catch (e: Throwable) {
                 BiometricLoggerImpl.e(e)
             }
         }
+        runBlurCleanup(
+            clearRenderEffect = {
+                if (Utils.isAtLeastS) {
+                    contentView?.setRenderEffect(null)
+                }
+            },
+            removeOverlay = {
+                v?.let {
+                    parentView.removeView(it)
+                }
+                parentView.findViewWithTag<View?>(this@WindowBackgroundBlurring.javaClass.name)
+                    ?.let {
+                        parentView.removeView(it)
+                    }
+            },
+            invalidateHost = {
+                contentView?.invalidate()
+                parentView.invalidate()
+            },
+            onFailure = { BiometricLoggerImpl.e(it) }
+        )
         BiometricLoggerImpl.d("${this.javaClass.name}.resetListeners")
+    }
+
+    private companion object {
+        const val BLUR_CAPTURE_TIMEOUT_MS = 2_000L
     }
 
 }

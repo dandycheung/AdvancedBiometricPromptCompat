@@ -19,6 +19,8 @@
 
 package dev.skomlach.biometric.compat
 
+import android.Manifest
+
 internal fun hasUsableBiometricRoute(
     routes: Collection<SelectedBiometricRoute?>
 ): Boolean {
@@ -43,4 +45,33 @@ internal fun shouldStopAfterPermissionDenied(
     return enroll &&
             deniedPermissions.isNotEmpty() &&
             !hasUsableRouteAfterDeniedModules
+}
+
+internal fun isCameraSensorBlockedForPermissions(
+    permissions: Collection<String>,
+    isCameraBlocked: () -> Boolean
+): Boolean {
+    return permissions.contains(Manifest.permission.CAMERA) && isCameraBlocked()
+}
+
+internal enum class CameraSensorBlockAction {
+    CONTINUE,
+    DISABLE_CAMERA_ROUTES
+}
+
+internal fun resolveCameraSensorBlock(isCameraBlocked: Boolean): CameraSensorBlockAction {
+    return if (isCameraBlocked) {
+        CameraSensorBlockAction.DISABLE_CAMERA_ROUTES
+    } else {
+        CameraSensorBlockAction.CONTINUE
+    }
+}
+
+internal fun biometricTypesUsingPermission(
+    permissionsByType: Collection<Pair<BiometricType, List<String>>>,
+    permission: String
+): Set<BiometricType> {
+    return permissionsByType
+        .filter { (_, permissions) -> permissions.contains(permission) }
+        .mapTo(LinkedHashSet()) { (type, _) -> type }
 }

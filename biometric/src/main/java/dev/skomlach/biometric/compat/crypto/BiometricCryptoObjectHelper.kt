@@ -43,7 +43,7 @@ object BiometricCryptoObjectHelper {
             return null
         lock.lock()
         try {
-            prepareCryptoAccess(name, isUserAuthRequired)
+            prepareCryptoAccess(name, isUserAuthRequired, purpose)
             val cipher =
                 when (purpose.purpose) {
                     BiometricCryptographyPurpose.ENCRYPT -> getCipherForEncryption(
@@ -88,6 +88,7 @@ object BiometricCryptoObjectHelper {
             isUserAuthRequired
         )
     } catch (e: Throwable) {
+        if (!isUserAuthRequired) throw e
         if (isUserAuthRequired && isNoKeystoreBiometricEnrollment(e)) {
             BiometricLoggerImpl.d(
                 "BiometricCryptoObjectHelper: AndroidKeyStore has no biometric enrollment usable for auth-per-use key $name"
@@ -102,17 +103,22 @@ object BiometricCryptoObjectHelper {
         }
     }
 
-    private fun prepareCryptoAccess(name: String, isUserAuthRequired: Boolean) {
+    private fun prepareCryptoAccess(name: String, isUserAuthRequired: Boolean, purpose: BiometricCryptographyPurpose) {
         if (!isUserAuthRequired) {
-            prepareAppFlowCrypto(name)
+            prepareAppFlowCrypto(name, purpose.purpose == BiometricCryptographyPurpose.ENCRYPT)
         } else {
             AppFlowCryptoFacade.registerKeyForBiometric(name)
         }
     }
 
-    private fun prepareAppFlowCrypto(name: String) {
-        AppFlowCryptoFacade.registerKeyForAppFlow(name)
-        AppFlowCryptoFacade.unlockWithAppSecret(name, name.toCharArray().reversedArray())
+    private fun prepareAppFlowCrypto(name: String, create: Boolean) {
+        val secret = AppFlowCryptoStorage.getProtectedSecret(name, create)
+        try {
+            AppFlowCryptoFacade.registerKeyForAppFlow(name)
+            AppFlowCryptoFacade.unlockWithAppSecret(name, secret)
+        } finally {
+            secret.fill('\u0000')
+        }
     }
 
     private fun isNoKeystoreBiometricEnrollment(t: Throwable): Boolean {

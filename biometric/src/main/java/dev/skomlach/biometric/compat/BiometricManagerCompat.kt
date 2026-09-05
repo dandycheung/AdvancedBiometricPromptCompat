@@ -44,6 +44,7 @@ object BiometricManagerCompat {
     private const val TAG = "BiometricManagerCompat"
     private val preferences =
         SharedPreferenceProvider.getPreferences("BiometricCompat_ManagerCompat")
+    private val stateCacheLock = Any()
 
     fun loadNonHardwareBiometrics() {
         LegacyBiometric.loadSoftwareModules()
@@ -245,30 +246,38 @@ object BiometricManagerCompat {
             )
         }
 
-        val snapshot = if (api.api == BiometricApi.AUTO) {
+        val baseSnapshot = if (api.api == BiometricApi.AUTO) {
             autoAuthSnapshot(api)
         } else {
             directAuthSnapshot(api)
-        }.withEnvironmentState(ignoreCameraCheck)
-
-        preferences.edit {
-            putBoolean(api.stateCacheKey("isHardwareDetected"), snapshot.state.hardwareDetected)
-            putBoolean(api.stateCacheKey("hasEnrolled"), snapshot.state.enrolled)
-            putBoolean(api.stateCacheKey("isLockOut"), snapshot.state.lockedOut)
         }
-        return snapshot
+
+        synchronized(stateCacheLock) {
+            if (shouldPersistAuthState(persistedAuthState(api), baseSnapshot.state)) {
+                preferences.edit {
+                    putBoolean(api.stateCacheKey("isHardwareDetected"), baseSnapshot.state.hardwareDetected)
+                    putBoolean(api.stateCacheKey("hasEnrolled"), baseSnapshot.state.enrolled)
+                    putBoolean(api.stateCacheKey("isLockOut"), baseSnapshot.state.lockedOut)
+                }
+            }
+        }
+        return baseSnapshot.withEnvironmentState(ignoreCameraCheck)
+    }
+
+    private fun persistedAuthState(api: BiometricAuthRequest): BiometricAuthState {
+        return BiometricAuthState(
+            hardwareDetected = preferences.getBoolean(api.stateCacheKey("isHardwareDetected"), false),
+            enrolled = preferences.getBoolean(api.stateCacheKey("hasEnrolled"), false),
+            lockedOut = preferences.getBoolean(api.stateCacheKey("isLockOut"), false),
+            permanentlyLocked = false
+        )
     }
 
     private fun cachedAuthState(
         api: BiometricAuthRequest,
         ignoreCameraCheck: Boolean
     ): BiometricAuthState {
-        return BiometricAuthState(
-            hardwareDetected = preferences.getBoolean(api.stateCacheKey("isHardwareDetected"), false),
-            enrolled = preferences.getBoolean(api.stateCacheKey("hasEnrolled"), false),
-            lockedOut = preferences.getBoolean(api.stateCacheKey("isLockOut"), false),
-            permanentlyLocked = false
-        ).withEnvironmentState(api, ignoreCameraCheck)
+        return persistedAuthState(api).withEnvironmentState(api, ignoreCameraCheck)
     }
 
     private fun directAuthSnapshot(api: BiometricAuthRequest): BiometricAuthSnapshot {

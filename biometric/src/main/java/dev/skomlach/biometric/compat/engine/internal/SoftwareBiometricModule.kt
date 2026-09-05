@@ -498,10 +498,6 @@ class SoftwareBiometricModule(
                 timeoutHandler.removeCallbacks(timeoutRunnable)
                 return
             }
-            val tmp = System.currentTimeMillis()
-            if (tmp - errorTs <= skipTimeout || tmp - authCallTimestamp.get() <= skipTimeout)
-                return
-            errorTs = tmp
             try {
                 if (!sessionGuard.tryTerminate(
                         sessionToken,

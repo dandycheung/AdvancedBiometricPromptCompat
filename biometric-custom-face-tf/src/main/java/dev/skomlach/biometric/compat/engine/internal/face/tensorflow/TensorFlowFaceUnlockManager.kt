@@ -287,10 +287,10 @@ class TensorFlowFaceUnlockManager(
         this.frameProvider = provider
     }
 
-    private fun Handler?.safePost(action: Runnable) {
-        this?.let {
-            if (it.looper.thread.isAlive) it.post(action)
-        }
+    private fun Handler?.safePost(action: Runnable): Boolean {
+        return this?.let {
+            it.looper.thread.isAlive && it.post(action)
+        } ?: false
     }
 
     private fun checkLockoutState(): Int? {
@@ -680,7 +680,7 @@ class TensorFlowFaceUnlockManager(
         }
         frameProvider.start(
             faceDetector!!,
-            { bitmap, faces -> if (isSessionActive.get()) onFrameReceived(bitmap, faces) },
+            { bitmap, faces -> onFrameReceived(bitmap, faces) },
             { code, msg ->
                 if (isSessionActive.get()) {
                     onAuthenticationError(code, msg)
@@ -692,16 +692,33 @@ class TensorFlowFaceUnlockManager(
     }
 
     private fun onFrameReceived(fullBitmap: Bitmap, faces: List<Face>) {
-        if (!isSessionActive.get()) return
-        if (!isProcessingFrame.compareAndSet(false, true)) return
-        backgroundHandler.safePost {
+        if (!isSessionActive.get()) {
+            fullBitmap.recycle()
+            return
+        }
+        if (!isProcessingFrame.compareAndSet(false, true)) {
+            fullBitmap.recycle()
+            return
+        }
+        val posted = backgroundHandler.safePost {
             try {
-                if (isSessionActive.get()) processFaces(fullBitmap, faces)
+                useOwnedFrame(
+                    frame = fullBitmap,
+                    release = { bitmap ->
+                        if (!bitmap.isRecycled) bitmap.recycle()
+                    }
+                ) { bitmap ->
+                    if (isSessionActive.get()) processFaces(bitmap, faces)
+                }
             } catch (e: Throwable) {
                 LogCat.logException(e)
             } finally {
                 isProcessingFrame.set(false)
             }
+        }
+        if (!posted) {
+            if (!fullBitmap.isRecycled) fullBitmap.recycle()
+            isProcessingFrame.set(false)
         }
     }
 
@@ -1106,23 +1123,25 @@ class TensorFlowFaceUnlockManager(
                 return FaceAttemptResult.Spoof
             }
 
-            if (matched) {
-                if (id == lastMatchedId) {
-                    consecutiveMatchCounter++
-                } else {
-                    consecutiveMatchCounter = 1
-                    lastMatchedId = id
-                }
-
-                if (consecutiveMatchCounter >= effectiveConfig.requiredConsecutiveMatches) {
+            val attempt = evaluateFaceAuthenticationAttempt(
+                state = FaceAuthenticationAttemptState(lastMatchedId, consecutiveMatchCounter),
+                candidateId = id,
+                distance = distance,
+                maximumDistance = effectiveConfig.maxDistanceThreshold,
+                requiredConsecutiveMatches = effectiveConfig.requiredConsecutiveMatches
+            )
+            consecutiveMatchCounter = attempt.state.consecutiveMatches
+            lastMatchedId = attempt.state.matchedId
+            when (attempt.outcome) {
+                FaceAuthenticationAttemptOutcome.SUCCESS -> {
                     LogCat.logError(TAG, "processFaces onAuthenticationSucceeded (auth)")
                     authCallback?.onAuthenticationSucceeded(AuthenticationResult(null))
                     stopAuthentication()
                     resetPermanentLockOut()
                     return FaceAttemptResult.Success
                 }
-
-                return FaceAttemptResult.MatchInProgress
+                FaceAuthenticationAttemptOutcome.MATCH_IN_PROGRESS -> return FaceAttemptResult.MatchInProgress
+                FaceAuthenticationAttemptOutcome.RETRY -> Unit
             }
 
             return FaceAttemptResult.NoMatch(distance)

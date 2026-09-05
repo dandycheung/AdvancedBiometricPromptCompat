@@ -23,9 +23,12 @@ import android.content.Context
 import android.os.Build
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl
 import dev.skomlach.common.misc.SystemStringsHelper
-import java.io.IOException
-import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+
+internal fun firstMatchingEntryName(
+    entryNames: Sequence<String>,
+    matches: (String) -> Boolean
+): String? = entryNames.firstOrNull(matches)
 
 object CheckBiometricUI {
     private fun getAPKs(context: Context, pkg: String): List<String> {
@@ -53,32 +56,17 @@ object CheckBiometricUI {
         fileZip: String
     ): Boolean {
 
-        var zipFile: ZipFile? = null
-        try {
-            zipFile = ZipFile(fileZip)
-            val entries = zipFile.entries()
-            val zipEntries: MutableList<ZipEntry> = ArrayList()
-
-            // iterate through all the entries
-            while (entries.hasMoreElements()) {
-
-                // get the zip entry
-                zipEntries.add(entries.nextElement())
+        ZipFile(fileZip).use { zipFile ->
+            val match = firstMatchingEntryName(
+                zipFile.entries().asSequence().map { it.name }
+            ) { name ->
+                name.contains("layout", true) &&
+                        (name.contains("biometric", true) || name.contains("fingerprint") ||
+                                name.contains("face", true) || name.contains("iris"))
             }
-            zipEntries.sortWith { o1, o2 -> o1.name.compareTo(o2.name) }
-            for (zip in zipEntries) {
-                if (zip.name.contains("layout", true) &&
-                    (zip.name.contains("biometric", true) || zip.name.contains("fingerprint") ||
-                            zip.name.contains("face", true) || zip.name.contains("iris"))
-                ) {
-                    BiometricLoggerImpl.d("Resource in APK ${zip.name}")
-                    return true
-                }
-            }
-        } finally {
-            try {
-                zipFile?.close()
-            } catch (ignore: IOException) {
+            if (match != null) {
+                BiometricLoggerImpl.d("Resource in APK $match")
+                return true
             }
         }
         return false
@@ -89,31 +77,16 @@ object CheckBiometricUI {
         fileZip: String
     ): Boolean {
 
-        var zipFile: ZipFile? = null
-        try {
-            zipFile = ZipFile(fileZip)
-            val entries = zipFile.entries()
-            val zipEntries: MutableList<ZipEntry> = ArrayList()
-
-            // iterate through all the entries
-            while (entries.hasMoreElements()) {
-
-                // get the zip entry
-                zipEntries.add(entries.nextElement())
+        ZipFile(fileZip).use { zipFile ->
+            val match = firstMatchingEntryName(
+                zipFile.entries().asSequence().map { it.name }
+            ) { name ->
+                name.contains("front", true) &&
+                        (name.contains("biometric", true) || name.contains("fingerprint"))
             }
-            zipEntries.sortWith { o1, o2 -> o1.name.compareTo(o2.name) }
-            for (zip in zipEntries) {
-                if (zip.name.contains("front", true) &&
-                    (zip.name.contains("biometric", true) || zip.name.contains("fingerprint"))
-                ) {
-                    BiometricLoggerImpl.d("Resource in APK ${zip.name}")
-                    return true
-                }
-            }
-        } finally {
-            try {
-                zipFile?.close()
-            } catch (ignore: IOException) {
+            if (match != null) {
+                BiometricLoggerImpl.d("Resource in APK $match")
+                return true
             }
         }
         return false

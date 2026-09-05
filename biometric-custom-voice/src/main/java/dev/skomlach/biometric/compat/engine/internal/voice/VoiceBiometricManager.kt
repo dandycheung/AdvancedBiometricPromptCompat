@@ -359,10 +359,7 @@ class VoiceBiometricManager(
         crypto: CryptoObject?,
         helpMessage: CharSequence
     ) {
-        if (sessionActive.compareAndSet(true, false)) {
-            callback?.onAuthenticationHelp(CUSTOM_BIOMETRIC_ACQUIRED_GOOD, helpMessage)
-            callback?.onAuthenticationSucceeded(AuthenticationResult(crypto))
-        }
+        completeVoiceAuthentication(sessionActive, callback, crypto, helpMessage)
     }
 
     private fun finishWithError(
@@ -401,7 +398,6 @@ class VoiceBiometricManager(
         private const val TOP_K_TEMPLATES = 3
         private const val REPLAY_FRESHNESS_WINDOW_MS = 30_000L
 
-        internal fun successResultDelayMsForTest(): Long = 0L
 
         private val LOCKOUT_POLICY = LockoutPolicy(
             maxFailedAttemptsBeforeLockout = 5,
@@ -414,4 +410,17 @@ class VoiceBiometricManager(
 private fun GmmConfidenceDetails.toLogString(): String {
     return "avgLL=$averageLogLikelihood enrollLL=$enrollmentLogLikelihood " +
         "drop=$likelihoodDrop allowedDrop=$allowedDrop components=$componentCount"
+}
+
+/** Voice matching is already complete; delivering success must not depend on an animation delay. */
+internal fun completeVoiceAuthentication(
+    sessionActive: AtomicBoolean,
+    callback: AbstractSoftwareBiometricManager.AuthenticationCallback?,
+    crypto: AbstractSoftwareBiometricManager.CryptoObject?,
+    helpMessage: CharSequence
+) {
+    if (sessionActive.compareAndSet(true, false)) {
+        callback?.onAuthenticationHelp(AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ACQUIRED_GOOD, helpMessage)
+        callback?.onAuthenticationSucceeded(AbstractSoftwareBiometricManager.AuthenticationResult(crypto))
+    }
 }

@@ -160,7 +160,7 @@ object Core {
                         isAppFlowCrypto =
                             AppFlowCryptoRegistry.getAccessType(keyName) == CryptoAccessType.APP_FLOW
                     } catch (e: BiometricCryptoException) {
-                        if (purpose.purpose == BiometricCryptographyPurpose.ENCRYPT) {
+                        if (requireUserAuth && purpose.purpose == BiometricCryptographyPurpose.ENCRYPT) {
                             BiometricCryptoObjectHelper.deleteCrypto(keyName)
                             biometricCryptoObject =
                                 BiometricCryptoObjectHelper.getBiometricCryptoObject(

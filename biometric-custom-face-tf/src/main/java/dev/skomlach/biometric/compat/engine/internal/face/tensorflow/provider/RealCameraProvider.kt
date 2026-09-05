@@ -49,6 +49,10 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
     private var backgroundThread: HandlerThread? = null
 
     private val isConverting = AtomicBoolean(false)
+    private var yData = ByteArray(0)
+    private var uData = ByteArray(0)
+    private var vData = ByteArray(0)
+    private var argbPixels = IntArray(0)
 
     override fun start(
         faceDetector: FaceDetector,
@@ -298,30 +302,45 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
                 val vBuffer = planes[2].buffer
 
 
-                val yData = ByteArray(yBuffer.remaining()).apply { yBuffer.get(this) }
-                val uData = ByteArray(uBuffer.remaining()).apply { uBuffer.get(this) }
-                val vData = ByteArray(vBuffer.remaining()).apply { vBuffer.get(this) }
+                if (yData.size != yBuffer.remaining()) yData = ByteArray(yBuffer.remaining())
+                if (uData.size != uBuffer.remaining()) uData = ByteArray(uBuffer.remaining())
+                if (vData.size != vBuffer.remaining()) vData = ByteArray(vBuffer.remaining())
+                yBuffer.get(yData)
+                uBuffer.get(uData)
+                vBuffer.get(vData)
 
                 val yRowStride = planes[0].rowStride
                 val uvRowStride = planes[1].rowStride
                 val uvPixelStride = planes[1].pixelStride
                 image.close()
-                val pixels = IntArray(width * height)
+                if (argbPixels.size != width * height) argbPixels = IntArray(width * height)
                 ImageUtils.convertYUV420ToARGB8888(
                     yData, uData, vData,
                     width, height,
                     yRowStride, uvRowStride, uvPixelStride,
-                    pixels
+                    argbPixels
                 )
 
                 val unrotatedBitmap =
-                    Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+                    Bitmap.createBitmap(argbPixels, width, height, Bitmap.Config.ARGB_8888)
                 val matrix = Matrix().apply { postRotate(sensorOrientation.toFloat()) }
                 val finalBitmap =
                     Bitmap.createBitmap(unrotatedBitmap, 0, 0, width, height, matrix, true)
-                unrotatedBitmap.recycle()
+                if (finalBitmap !== unrotatedBitmap) {
+                    unrotatedBitmap.recycle()
+                }
 
-                onFrame?.invoke(finalBitmap, faces)
+                val frameListener = onFrame
+                if (frameListener == null) {
+                    finalBitmap.recycle()
+                } else {
+                    try {
+                        frameListener.invoke(finalBitmap, faces)
+                    } catch (error: Throwable) {
+                        if (!finalBitmap.isRecycled) finalBitmap.recycle()
+                        throw error
+                    }
+                }
 
             } catch (e: Exception) {
                 LogCat.logException(e)

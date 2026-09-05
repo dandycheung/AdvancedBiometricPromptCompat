@@ -29,6 +29,10 @@ object BiometricLoggerImpl {
         if (DEBUG) Log.e("BiometricLogging", listOf(*msgs).toString())
     }
 
+    fun e(message: () -> Any?) {
+        if (DEBUG) Log.e("BiometricLogging", message.invoke().toString())
+    }
+
     fun e(e: Throwable) {
         e(e, e.message)
     }
@@ -39,5 +43,9 @@ object BiometricLoggerImpl {
 
     fun d(vararg msgs: Any?) {
         if (DEBUG) Log.d("BiometricLogging", listOf(*msgs).toString())
+    }
+
+    fun d(message: () -> Any?) {
+        if (DEBUG) Log.d("BiometricLogging", message.invoke().toString())
     }
 }

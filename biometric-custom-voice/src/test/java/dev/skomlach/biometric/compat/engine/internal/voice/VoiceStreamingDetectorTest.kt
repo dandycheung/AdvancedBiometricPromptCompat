@@ -10,6 +10,20 @@ import kotlin.math.sin
 
 class VoiceStreamingDetectorTest {
     @Test
+    fun partialDetectionCanSkipMaterializingGrowingSample() {
+        val detector = VoiceStreamingDetector(sampleRateHz = SAMPLE_RATE)
+        val chunks = List(30) { voiceChunk(180.0, amplitude = 0.08f) }
+
+        val lightweight = detector.detect(chunks, materializeActiveSample = false)
+        val materialized = detector.detect(chunks, materializeActiveSample = true)
+
+        assertTrue(lightweight.detectedSpeech)
+        assertFalse(lightweight.isComplete)
+        assertTrue(lightweight.activeSample == null)
+        assertNotNull(materialized.activeSample)
+    }
+
+    @Test
     fun detectHandlesImmediateSpeechStartWithoutSilentPrefix() {
         val detector = VoiceStreamingDetector(sampleRateHz = SAMPLE_RATE)
 
@@ -94,7 +108,7 @@ class VoiceStreamingDetectorTest {
     }
 
     @Test
-    fun detectKeepsAllowedShortPauseInSameUtteranceButRestartsAfterLongerPause() {
+    fun detectPreservesAllowedShortPauseInSameUtteranceButRestartsAfterLongerPause() {
         val shortPauseDetector = VoiceStreamingDetector(
             sampleRateHz = SAMPLE_RATE,
             shortPauseFrames = 4
@@ -114,7 +128,15 @@ class VoiceStreamingDetectorTest {
         assertTrue(allowedPause.detectedSpeech)
         assertFalse(allowedPause.isComplete)
         assertNotNull(allowedPause.activeSample)
-        assertEquals(CHUNK_SIZE * 20, allowedPause.activeSample!!.size)
+        val allowedPauseSample = allowedPause.activeSample!!
+        assertEquals(CHUNK_SIZE * 24, allowedPauseSample.size)
+        assertChunkEquals(firstVoice, allowedPauseSample, destinationOffset = 0)
+        assertChunkEquals(
+            silenceChunk(scale = 0.003f),
+            allowedPauseSample,
+            destinationOffset = CHUNK_SIZE * 10
+        )
+        assertChunkEquals(secondVoice, allowedPauseSample, destinationOffset = CHUNK_SIZE * 14)
 
         val longerPause = shortPauseDetector.detect(
             buildList {
@@ -190,9 +212,14 @@ class VoiceStreamingDetectorTest {
         assertTrue(result.isComplete)
         assertNotNull(result.completedSample)
         val payload = result.completedSample!!
-        assertEquals(firstVoice.size * 48, payload.size)
+        assertEquals(firstVoice.size * 52, payload.size)
         assertChunkEquals(firstVoice, payload, destinationOffset = 0)
-        assertChunkEquals(secondVoice, payload, destinationOffset = firstVoice.size * 24)
+        assertChunkEquals(
+            silenceChunk(scale = 0.003f),
+            payload,
+            destinationOffset = firstVoice.size * 24
+        )
+        assertChunkEquals(secondVoice, payload, destinationOffset = firstVoice.size * 28)
     }
 
     private fun voiceChunk(

@@ -69,6 +69,7 @@ import java.util.Collections
 import java.util.ServiceLoader
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import dev.skomlach.biometric.compat.impl.PendingAuthStart
 
 object LegacyBiometric {
     private const val INIT_AUTH_RETRY_DELAY_MS = 50L
@@ -80,6 +81,7 @@ object LegacyBiometric {
 
     private val initInProgress = AtomicBoolean(false)
     private val authInProgress = AtomicBoolean(false)
+    private val pendingAuthStart = PendingAuthStart(ExecutorHelper::postDelayed, ExecutorHelper::removeCallbacks)
 
     @Volatile
     private var customLoading = false
@@ -530,25 +532,22 @@ object LegacyBiometric {
         startTime: Long
     ) {
         if (initInProgress.get() && System.currentTimeMillis() - startTime < INIT_AUTH_TIMEOUT_MS) {
-            ExecutorHelper.postDelayed(
-                {
-                    retryAuthenticationAfterInit(
-                        biometricCryptographyPurpose,
-                        viewRef,
-                        requestedMethods,
-                        listener,
-                        bundle,
-                        provider,
-                        excludedModuleTags,
-                        allowCryptoFallback,
-                        startTime
-                    )
-                },
-                INIT_AUTH_RETRY_DELAY_MS
-            )
+            pendingAuthStart.schedule(INIT_AUTH_RETRY_DELAY_MS) {
+                retryAuthenticationAfterInit(
+                    biometricCryptographyPurpose,
+                    viewRef,
+                    requestedMethods,
+                    listener,
+                    bundle,
+                    provider,
+                    excludedModuleTags,
+                    allowCryptoFallback,
+                    startTime
+                )
+            }
             return
         }
-        ExecutorHelper.post {
+        pendingAuthStart.schedule(0) {
             authenticate(
                 biometricCryptographyPurpose,
                 viewRef.get(),
@@ -563,15 +562,17 @@ object LegacyBiometric {
     }
 
     fun cancelAuthentication() {
-        if (authInProgress.compareAndSet(true, false)) {
-            d("BiometricAuthentication.cancelAuthentication")
-            availableBiometricMethods.forEach { method ->
-                val module = moduleHashMap[method]
-                if (module is FacelockOldModule) module.stopAuth()
-                if (module is FaceunlockLavaModule) module.stopAuth()
-            }
-            Core.cancelAuthentication()
-        } else e("BiometricAuthentication not canceled, wrong state")
+        pendingAuthStart.cancel()
+        // A module callback may already have released the start gate. The remaining
+        // modules still own live cancellation signals and must always be stopped.
+        authInProgress.set(false)
+        d("BiometricAuthentication.cancelAuthentication")
+        availableBiometricMethods.forEach { method ->
+            val module = moduleHashMap[method]
+            if (module is FacelockOldModule) module.stopAuth()
+            if (module is FaceunlockLavaModule) module.stopAuth()
+        }
+        Core.cancelAuthentication()
     }
 
     fun getSettingsIntent(type: BiometricType): Intent? {

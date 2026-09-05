@@ -198,4 +198,14 @@ class Api28StartAuthPlanTest {
             )
         )
     }
+
+    @Test
+    fun `empty secondary routes do not open a compat fallback dialog`() {
+        assertFalse(
+            shouldShowPostSystemCompatDialog(
+                systemPromptStarted = false,
+                hasPendingLegacyRoute = false
+            )
+        )
+    }
 }

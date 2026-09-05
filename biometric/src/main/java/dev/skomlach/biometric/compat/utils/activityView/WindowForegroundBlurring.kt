@@ -33,6 +33,7 @@ import android.widget.ImageView
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.ViewCompat
 import androidx.core.view.doOnAttach
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -51,9 +52,9 @@ import dev.skomlach.common.blur.BlurUtil
 import dev.skomlach.common.blur.DEFAULT_RADIUS
 import dev.skomlach.common.misc.ExecutorHelper
 import dev.skomlach.common.misc.Utils
-import dev.skomlach.common.statusbar.ColorUtil
-import java.util.concurrent.atomic.AtomicBoolean
 import dev.skomlach.common.permissions.PermissionUtils
+import dev.skomlach.common.statusbar.ColorUtil
+
 class WindowForegroundBlurring(
     private val compatBuilder: BiometricPromptCompat.Builder,
     private val parentView: ViewGroup,
@@ -63,10 +64,11 @@ class WindowForegroundBlurring(
     private var contentView: ViewGroup? = null
     private var v: View? = null
     private var renderEffect: RenderEffect? = null
+    private val blurCaptureLatch = BlurCaptureLatch()
+    private val paletteCaptureLatch = BlurCaptureLatch()
 
     @Volatile
     private var isBlurViewAttachedToHost = false
-    private var drawingInProgress = AtomicBoolean(false)
     private var biometricsLayout: View? = null
     private var defaultColor = Color.TRANSPARENT
     private val lifecycleEventObserver = object :
@@ -138,16 +140,7 @@ class WindowForegroundBlurring(
                 setOnTouchListener { _, _ ->
                     true
                 }
-                if (Utils.isAtLeastS) {
-                    if (renderEffect == null)
-                        renderEffect =
-                            RenderEffect.createBlurEffect(
-                                DEFAULT_RADIUS.toFloat(),
-                                DEFAULT_RADIUS.toFloat(),
-                                Shader.TileMode.DECAL
-                            )
-                    contentView?.setRenderEffect(renderEffect)
-                } else
+                if (!Utils.isAtLeastS)
                     ViewCompat.setBackground(this, Color.TRANSPARENT.toDrawable())
             }
 
@@ -156,32 +149,30 @@ class WindowForegroundBlurring(
     private fun updateBackground() {
         if (!isBlurViewAttachedToHost)
             return
-        if (!drawingInProgress.get()) {
-            drawingInProgress.set(true)
-
-            BiometricLoggerImpl.d("${this.javaClass.name}.updateBackground")
-            try {
-                contentView?.let {
-                    BlurUtil.takeScreenshotAndBlur(it) { originalBitmap, blurredBitmap ->
-                        if (!isBlurViewAttachedToHost) {
-                            ExecutorHelper.postDelayed(
-                                {
-                                    drawingInProgress.set(false)
-                                },
-                                context.resources.getInteger(android.R.integer.config_shortAnimTime)
-                                    .toLong()
-                            )
-                            return@takeScreenshotAndBlur
-                        }
-                        setDrawable(blurredBitmap)
-                        updateDefaultColor(originalBitmap)
-                    }
-                } ?: ExecutorHelper.postDelayed({
-                    drawingInProgress.set(false)
-                }, context.resources.getInteger(android.R.integer.config_shortAnimTime).toLong())
-            } catch (e: Throwable) {
-                BiometricLoggerImpl.e(e)
+        if (!shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+            applyRenderEffect()
+            return
+        }
+        val captureTarget = contentView ?: return
+        if (captureTarget.width <= 0 || captureTarget.height <= 0) return
+        val captureToken = blurCaptureLatch.tryStart() ?: return
+        ExecutorHelper.postDelayed(
+            { blurCaptureLatch.finish(captureToken) },
+            BLUR_CAPTURE_TIMEOUT_MS
+        )
+        BiometricLoggerImpl.d("${this.javaClass.name}.updateBackground")
+        try {
+            BlurUtil.takeScreenshotAndBlur(captureTarget) { originalBitmap, blurredBitmap ->
+                if (blurCaptureLatch.finish(captureToken) && isBlurViewAttachedToHost) {
+                    setDrawable(blurredBitmap)
+                    updateDefaultColor(originalBitmap)
+                } else {
+                    recycleUnusedCapture(originalBitmap, blurredBitmap)
+                }
             }
+        } catch (e: Throwable) {
+            blurCaptureLatch.finish(captureToken)
+            BiometricLoggerImpl.e(e)
         }
     }
 
@@ -190,23 +181,53 @@ class WindowForegroundBlurring(
         try {
             v?.let {
                 if (Utils.isAtLeastS) {
-                    if (renderEffect == null)
-                        renderEffect =
-                            RenderEffect.createBlurEffect(
-                                DEFAULT_RADIUS.toFloat(),
-                                DEFAULT_RADIUS.toFloat(),
-                                Shader.TileMode.DECAL
-                            )
-                    contentView?.setRenderEffect(renderEffect)
+                    applyRenderEffect()
                 } else
                     ViewCompat.setBackground(it, bm?.toDrawable(it.resources))
             }
         } catch (e: Throwable) {
             BiometricLoggerImpl.e(e)
         }
-        ExecutorHelper.postDelayed({
-            drawingInProgress.set(false)
-        }, context.resources.getInteger(android.R.integer.config_shortAnimTime).toLong())
+    }
+
+    private fun applyRenderEffect() {
+        if (!Utils.isAtLeastS || !isBlurViewAttachedToHost) {
+            return
+        }
+        if (renderEffect == null) {
+            renderEffect = RenderEffect.createBlurEffect(
+                DEFAULT_RADIUS.toFloat(),
+                DEFAULT_RADIUS.toFloat(),
+                Shader.TileMode.DECAL
+            )
+        }
+        contentView?.setRenderEffect(renderEffect)
+    }
+
+    private fun captureBackdropPalette() {
+        if (!isBlurViewAttachedToHost ||
+            !shouldCaptureBackdropPalette(Utils.isAtLeastS)
+        ) {
+            return
+        }
+        val captureTarget = contentView ?: return
+        if (captureTarget.width <= 0 || captureTarget.height <= 0) {
+            captureTarget.doOnLayout { captureBackdropPalette() }
+            return
+        }
+        val captureToken = paletteCaptureLatch.tryStart() ?: return
+        try {
+            BlurUtil.takeScreenshot(captureTarget) { originalBitmap ->
+                if (paletteCaptureLatch.finish(captureToken) && isBlurViewAttachedToHost) {
+                    updateDefaultColor(originalBitmap)
+                } else if (!originalBitmap.isRecycled) {
+                    originalBitmap.recycle()
+                }
+            }
+        } catch (error: Throwable) {
+            paletteCaptureLatch.finish(captureToken)
+            BiometricLoggerImpl.e(error)
+        }
     }
 
     fun setupListeners() {
@@ -219,14 +240,21 @@ class WindowForegroundBlurring(
             }
 
 
-            updateBackground()
+            if (shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+                updateBackground()
+            } else {
+                applyRenderEffect()
+                v?.post { captureBackdropPalette() }
+            }
             IconStateHelper.registerListener(this)
             parentView.doOnAttach {
                 parentView.findViewTreeLifecycleOwner()?.lifecycle?.addObserver(
                     lifecycleEventObserver
                 )
             }
-            parentView.viewTreeObserver.addOnPreDrawListener(onDrawListener)
+            if (shouldCaptureBlurBitmap(Utils.isAtLeastS)) {
+                parentView.viewTreeObserver.addOnPreDrawListener(onDrawListener)
+            }
         } catch (e: Throwable) {
             BiometricLoggerImpl.e(e)
         }
@@ -235,34 +263,41 @@ class WindowForegroundBlurring(
     }
 
     fun resetListeners() {
-        if (!isBlurViewAttachedToHost) return
+        val wasAttached = isBlurViewAttachedToHost
         isBlurViewAttachedToHost = false
-        try {
-            parentView.viewTreeObserver.removeOnPreDrawListener(onDrawListener)
-            parentView.findViewTreeLifecycleOwner()?.lifecycle?.removeObserver(
-                lifecycleEventObserver
-            )
-        } catch (e: Throwable) {
-            BiometricLoggerImpl.e(e)
-        }
-        try {
-            v?.let {
-                parentView.removeView(it)
-            }
-            parentView.findViewWithTag<View?>(this@WindowForegroundBlurring.javaClass.name)?.let {
-                parentView.removeView(it)
-            }
-        } catch (e: Throwable) {
-            BiometricLoggerImpl.e(e)
-        } finally {
+        blurCaptureLatch.reset()
+        paletteCaptureLatch.reset()
+        if (wasAttached) {
             try {
-                if (Utils.isAtLeastS) {
-                    contentView?.setRenderEffect(null)
-                }
+                parentView.viewTreeObserver.removeOnPreDrawListener(onDrawListener)
+                parentView.findViewTreeLifecycleOwner()?.lifecycle?.removeObserver(
+                    lifecycleEventObserver
+                )
             } catch (e: Throwable) {
                 BiometricLoggerImpl.e(e)
             }
         }
+        runBlurCleanup(
+            clearRenderEffect = {
+                if (Utils.isAtLeastS) {
+                    contentView?.setRenderEffect(null)
+                }
+            },
+            removeOverlay = {
+                v?.let {
+                    parentView.removeView(it)
+                }
+                parentView.findViewWithTag<View?>(this@WindowForegroundBlurring.javaClass.name)
+                    ?.let {
+                        parentView.removeView(it)
+                    }
+            },
+            invalidateHost = {
+                contentView?.invalidate()
+                parentView.invalidate()
+            },
+            onFailure = { BiometricLoggerImpl.e(it) }
+        )
         IconStateHelper.unregisterListener(this)
         BiometricLoggerImpl.d("${this.javaClass.name}.resetListeners")
 
@@ -356,6 +391,9 @@ class WindowForegroundBlurring(
                 crop.height
             )
             BiometricLoggerImpl.d("${this.javaClass.name}.updateDefaultColor $crop")
+            if (newBm !== bm && !bm.isRecycled) {
+                bm.recycle()
+            }
             Palette.from(newBm).generate { palette ->
                 try {
                     val paletteDefColor =
@@ -395,11 +433,21 @@ class WindowForegroundBlurring(
                     updateIcons()
                 } catch (e: Throwable) {
                     BiometricLoggerImpl.e(e)
+                } finally {
+                    if (!newBm.isRecycled) newBm.recycle()
                 }
             }
 
         } catch (e: Throwable) {
+            if (!bm.isRecycled) bm.recycle()
             BiometricLoggerImpl.e(e)
+        }
+    }
+
+    private fun recycleUnusedCapture(originalBitmap: Bitmap, blurredBitmap: Bitmap?) {
+        if (!originalBitmap.isRecycled) originalBitmap.recycle()
+        if (blurredBitmap !== originalBitmap && blurredBitmap?.isRecycled == false) {
+            blurredBitmap.recycle()
         }
     }
 
@@ -541,6 +589,10 @@ class WindowForegroundBlurring(
         WAITING,
         ERROR,
         SUCCESS
+    }
+
+    private companion object {
+        const val BLUR_CAPTURE_TIMEOUT_MS = 2_000L
     }
 }
 

@@ -172,6 +172,15 @@ internal fun shouldShowInitialCompatDialog(
             (heuristicReportsMissingUi && !hasSelectedSystemPromptRoute)
 }
 
+internal fun shouldPersistAuthState(
+    cached: BiometricAuthState,
+    current: BiometricAuthState
+): Boolean {
+    return cached.hardwareDetected != current.hardwareDetected ||
+            cached.enrolled != current.enrolled ||
+            cached.lockedOut != current.lockedOut
+}
+
 internal fun shouldShowPostSystemCompatDialog(
     systemPromptStarted: Boolean,
     hasPendingLegacyRoute: Boolean
@@ -212,6 +221,93 @@ internal fun isSamsungDeviceModel(model: String?): Boolean {
  */
 internal fun AtomicBoolean.tryStartAuthFlow(): Boolean {
     return compareAndSet(false, true)
+}
+
+/**
+ * Releases the shared gate only for the flow that still owns the current generation.
+ */
+internal fun AtomicBoolean.finishAuthFlowIfCurrent(
+    expectedGeneration: Long,
+    currentGeneration: Long
+): Boolean {
+    return expectedGeneration == currentGeneration && compareAndSet(true, false)
+}
+
+internal fun runAuthPreflightStages(
+    shouldPrepareModules: () -> Boolean,
+    checkPermissions: ((() -> Unit) -> Unit),
+    checkSensor: ((() -> Unit) -> Unit),
+    prepareModulesTask: ((() -> Unit) -> Unit),
+    authenticate: () -> Unit
+) {
+    checkPermissions {
+        checkSensor {
+            if (shouldPrepareModules()) {
+                prepareModulesTask(authenticate)
+            } else {
+                authenticate()
+            }
+        }
+    }
+}
+
+internal fun dispatchAfterFlowFinished(
+    finishFlow: () -> Boolean,
+    dispatch: () -> Unit
+): Boolean {
+    if (!finishFlow()) {
+        return false
+    }
+    dispatch()
+    return true
+}
+
+internal class AuthFlowRouteCache<K, V> {
+    private val values = HashMap<K, V>()
+    private var activeFlowId: Long? = null
+
+    @Synchronized
+    fun beginFlow(flowId: Long) {
+        activeFlowId = flowId
+        values.clear()
+    }
+
+    @Synchronized
+    fun endFlow(flowId: Long) {
+        if (activeFlowId == flowId) {
+            activeFlowId = null
+            values.clear()
+        }
+    }
+
+    @Synchronized
+    fun invalidate() {
+        values.clear()
+    }
+
+    @Synchronized
+    fun getOrPut(key: K, calculate: () -> V): V {
+        if (activeFlowId == null) {
+            return calculate()
+        }
+        if (values.containsKey(key)) {
+            @Suppress("UNCHECKED_CAST")
+            return values[key] as V
+        }
+        return calculate().also { values[key] = it }
+    }
+}
+
+/**
+ * Prevents callbacks from a canceled or replaced authentication flow from resuming its preflight.
+ */
+internal fun isAuthFlowActive(
+    expectedGeneration: Long,
+    currentGeneration: Long,
+    inProgress: Boolean,
+    canceled: Boolean
+): Boolean {
+    return expectedGeneration == currentGeneration && inProgress && !canceled
 }
 
 /**
@@ -379,7 +475,7 @@ internal fun emptyEffectiveBiometricCancellationResults(
     return sourceTypes.mapTo(LinkedHashSet()) { type ->
         AuthenticationResult(
             type,
-            reason = AuthenticationFailureReason.CANCELED
+            reason = AuthenticationFailureReason.CANCELED_BY_USER
         )
     }
 }
