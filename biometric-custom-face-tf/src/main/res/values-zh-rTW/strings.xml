@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">人臉相機無法使用</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">將你的臉對準相機</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">將臉對準以設定臉部解鎖</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">需要可信任的相機擷取</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">為進行活體偵測，請%1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">直視前方</string>
+    <string name="biometriccompat_tf_face_challenge_left">將頭稍微向左轉</string>
+    <string name="biometriccompat_tf_face_challenge_right">將頭稍微向右轉</string>
 </resources>

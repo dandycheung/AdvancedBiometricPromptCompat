@@ -41,6 +41,8 @@
     <string name="biometriccompat_behavior_key_space">spatie</string>
     <string name="biometriccompat_behavior_key_backspace">&lt;</string>
     <string name="biometriccompat_behavior_status_checking">Gedrag controleren</string>
+    <string name="biometriccompat_behavior_error_capture_invalid">De opname is onderbroken of was ongeldig. Probeer het opnieuw.</string>
+    <string name="biometriccompat_behavior_error_accessibility">Er is een onbetrouwbare toegankelijkheidsservice actief. Schakel deze uit en probeer het opnieuw.</string>
 </resources>
 
 

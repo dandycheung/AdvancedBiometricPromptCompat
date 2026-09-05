@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Voer je schermvergrendeling in om door te gaan</string>
     <string name="biometriccompat_fingerprint_error_lockout">Te veel pogingen. Probeer het later opnieuw.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Niet herkend</string>
+    <string name="biometriccompat_modality_unverifiable">Deze systeem-API kan de gevraagde biometrische sensor niet verifiëren. Kies een willekeurige biometrische methode of een ondersteunde sensorspecifieke API.</string>
 </resources>
 
 

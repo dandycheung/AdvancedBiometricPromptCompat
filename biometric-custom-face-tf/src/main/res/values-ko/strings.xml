@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">얼굴 카메라를 사용할 수 없습니다</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">얼굴을 카메라에 맞추세요</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">얼굴 잠금 해제를 설정하려면 얼굴을 맞추세요</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">신뢰할 수 있는 카메라 캡처가 필요합니다</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">실제 사용자 확인을 위해 %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">정면을 바라보세요</string>
+    <string name="biometriccompat_tf_face_challenge_left">고개를 왼쪽으로 조금 돌리세요</string>
+    <string name="biometriccompat_tf_face_challenge_right">고개를 오른쪽으로 조금 돌리세요</string>
 </resources>

@@ -9,3 +9,6 @@ interface SoftwareBiometricPromptFactory {
 
     fun create(host: SoftwareBiometricPromptHost): SoftwareBiometricPromptDelegate?
 }
+
+/** Opt-in for authentication preparation with a null rootView and status-only feedback. */
+interface BackgroundSoftwareBiometricPromptFactory : SoftwareBiometricPromptFactory

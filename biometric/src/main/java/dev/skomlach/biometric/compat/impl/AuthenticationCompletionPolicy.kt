@@ -5,6 +5,30 @@ import dev.skomlach.biometric.compat.BiometricType
 
 internal enum class AuthenticationCompletion { PENDING, SUCCEEDED, FAILED }
 
+internal fun requiresSensorSpecificRoute(type: BiometricType, usesSystemPrompt: Boolean, deviceCredential: Boolean): Boolean =
+    type != BiometricType.BIOMETRIC_ANY && usesSystemPrompt && !deviceCredential
+
+internal fun resolveApi28Completion(
+    confirmation: BiometricConfirmation,
+    availableTypes: Collection<BiometricType>,
+    softwareEnrollmentTargets: Collection<BiometricType>,
+    hardwareConfirmation: AuthResult.AuthResultState?,
+    results: Map<out BiometricType?, AuthResult>
+): AuthenticationCompletion {
+    if (softwareEnrollmentTargets.isNotEmpty()) {
+        when (hardwareConfirmation) {
+            AuthResult.AuthResultState.FATAL_ERROR -> return AuthenticationCompletion.FAILED
+            AuthResult.AuthResultState.SUCCESS -> Unit
+            else -> return AuthenticationCompletion.PENDING
+        }
+    }
+    return resolveAuthenticationCompletion(
+        confirmation,
+        softwareEnrollmentTargets.ifEmpty { availableTypes },
+        results
+    )
+}
+
 // A system prompt reports no individual modality. One success cannot prove both face and finger.
 internal fun canConfirmSystemModalities(
     confirmation: BiometricConfirmation,

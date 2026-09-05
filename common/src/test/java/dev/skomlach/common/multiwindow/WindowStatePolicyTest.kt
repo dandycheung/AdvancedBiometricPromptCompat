@@ -8,6 +8,66 @@ import org.junit.Test
 class WindowStatePolicyTest {
 
     @Test
+    fun authoritativeFullscreenMetricsDoNotFallBackToVisibleRectHeuristics() {
+        val state = windowStateForTest(
+            current = WindowBoundsPx(0, 0, 1080, 2400),
+            maximum = WindowBoundsPx(0, 0, 1080, 2400),
+            safeInsets = WindowInsetsPx(0, 100, 0, 150)
+        ).copy(hasReliableWindowMetrics = true)
+        assertFalse(state.isInWindowedMode)
+        assertFalse(state.needsLegacyWindowDetection)
+    }
+
+    @Test
+    fun missingModernMetricsRetainLegacyOemDetection() {
+        val state = windowStateForTest(
+            current = WindowBoundsPx(0, 0, 1080, 2400),
+            maximum = WindowBoundsPx(0, 0, 1080, 2400)
+        )
+        assertTrue(state.needsLegacyWindowDetection)
+        assertTrue(state.copy(isLegacyMultiWindow = true).isInWindowedMode)
+    }
+
+    @Test
+    fun childBubbleTaskHintIsWindowedEvenWithEqualMetrics() {
+        val state = windowStateForTest(
+            current = WindowBoundsPx(0, 0, 600, 1000),
+            maximum = WindowBoundsPx(0, 0, 600, 1000),
+            isLaunchedFromBubble = true
+        ).copy(hasReliableWindowMetrics = true)
+        assertTrue(state.isInWindowedMode)
+        assertFalse(canLockWindowOrientation(state, 37, 400))
+    }
+
+    @Test
+    fun android16And17LargeScreensDoNotRelyOnOrientationLocks() {
+        val state = windowStateForTest(
+            current = WindowBoundsPx(0, 0, 1200, 2000),
+            maximum = WindowBoundsPx(0, 0, 1200, 2000)
+        )
+        assertFalse(canLockWindowOrientation(state, 36, 600))
+        assertFalse(canLockWindowOrientation(state, 37, 800))
+        assertTrue(canLockWindowOrientation(state, 35, 800))
+        assertTrue(canLockWindowOrientation(state, 37, 400))
+    }
+
+    @Test
+    fun physicalPanelResolutionDoesNotClassifyLogicalFullscreenAsWindowed() {
+        val state = windowStateForTest(
+            current = WindowBoundsPx(0, 0, 1080, 2400),
+            maximum = WindowBoundsPx(0, 0, 1080, 2400)
+        ).copy(hasReliableWindowMetrics = true, physicalDisplayBounds = WindowBoundsPx(0, 0, 1440, 3200))
+        assertFalse(state.isInWindowedMode)
+        assertFalse(state.needsLegacyWindowDetection)
+    }
+
+    @Test
+    fun dialogWidthTracksDesktopResizeAndCaptionInsets() {
+        assertEquals(440, resolveDialogWidthPx(800, WindowBoundsPx(50, 100, 500, 1000), WindowInsetsPx(20, 50, 40, 20)))
+        assertEquals(740, resolveDialogWidthPx(800, WindowBoundsPx(50, 100, 800, 1000), WindowInsetsPx(20, 50, 40, 20)))
+    }
+
+    @Test
     fun constrainedCurrentBoundsAreTreatedAsMultiWindowWhenPlatformFlagIsFalse() {
         val state = windowStateForTest(
             current = WindowBoundsPx(left = 0, top = 0, width = 900, height = 1600),

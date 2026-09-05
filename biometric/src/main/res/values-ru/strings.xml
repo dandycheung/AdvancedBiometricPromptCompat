@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Введите блокировку экрана, чтобы продолжить</string>
     <string name="biometriccompat_fingerprint_error_lockout">Слишком много попыток. Повторите позже.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Не распознано</string>
+    <string name="biometriccompat_modality_unverifiable">Этот системный API не может подтвердить использование запрошенного биометрического датчика. Выберите любой способ биометрии или поддерживаемый API для конкретного датчика.</string>
 </resources>
 
 

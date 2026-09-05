@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">输入屏幕锁以继续</string>
     <string name="biometriccompat_fingerprint_error_lockout">尝试次数过多。请稍后再试。</string>
     <string name="biometriccompat_fingerprint_not_recognized">无法识别</string>
+    <string name="biometriccompat_modality_unverifiable">此系统 API 无法验证所请求的生物识别传感器。请选择任意生物识别方式或受支持的传感器专用 API。</string>
 </resources>
 
 

@@ -10,4 +10,5 @@
     <string name="biometriccompat_global_action_settings">सेटिंग्स</string>
     <string name="biometriccompat_turn_on_settings_action">सेटिंग्स में चालू करें</string>
     <string name="biometriccompat_error_message_change_not_allowed">यह बदलाव आपके एडमिन द्वारा अनुमत नहीं है</string>
+    <string name="biometriccompat_permissions_settings_message">जारी रखने के लिए, ऐप की सेटिंग में ये अनुमतियाँ दें:\n%1$s</string>
 </resources>

@@ -23,6 +23,9 @@
 
     <queries>
         <intent>
+            <action android:name="android.intent.action.MANAGE_APP_PERMISSIONS" />
+        </intent>
+        <intent>
             <action android:name="android.accessibilityservice.AccessibilityService" />
         </intent>
     </queries>

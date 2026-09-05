@@ -6,7 +6,6 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.os.Build
 import android.view.Surface
-import android.view.View
 import android.view.WindowManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -16,20 +15,43 @@ import dev.skomlach.common.contextprovider.getFixedContext
 internal fun buildWindowState(
     activity: Activity?,
     fallbackContext: Context,
-    isLegacyMultiWindow: Boolean = false
+    isLegacyMultiWindow: Boolean = false,
+    isInBubbleTask: Boolean = false
 ): WindowState {
-    val currentBounds = getCurrentWindowBounds(activity, fallbackContext)
-    val maximumBounds = getMaximumWindowBounds(activity, fallbackContext)
+    val currentMetrics = if (Build.VERSION.SDK_INT >= 30 && activity != null) {
+        runCatching { activity.windowManager.currentWindowMetrics }.getOrNull()
+    } else null
+    val maximumMetrics = if (Build.VERSION.SDK_INT >= 30 && activity != null) {
+        runCatching { activity.windowManager.maximumWindowMetrics }.getOrNull()
+    } else null
+    val currentBounds = if (Build.VERSION.SDK_INT >= 30) currentMetrics?.bounds?.toWindowBoundsPx()
+        ?.takeUnless { it.isEmpty } ?: getCurrentWindowBounds(activity, fallbackContext)
+    else getCurrentWindowBounds(activity, fallbackContext)
+    val maximumBounds = if (Build.VERSION.SDK_INT >= 30) maximumMetrics?.bounds?.toWindowBoundsPx()
+        ?.takeUnless { it.isEmpty } ?: getMaximumWindowBounds(activity, fallbackContext)
+    else getMaximumWindowBounds(activity, fallbackContext)
+    val reliableMetrics = Build.VERSION.SDK_INT >= 30 && currentMetrics != null && maximumMetrics != null &&
+            !currentMetrics.bounds.isEmpty && !maximumMetrics.bounds.isEmpty
+    val metricInsets = if (Build.VERSION.SDK_INT >= 30) currentMetrics?.windowInsets?.let {
+            WindowInsetsCompat.toWindowInsetsCompat(it)
+        } else null
+    val insets = metricInsets ?: activity?.window?.decorView?.let { ViewCompat.getRootWindowInsets(it) }
     val physicalBounds = getPhysicalDisplayBounds(activity, fallbackContext)
     return calculateWindowState(
         currentBounds = currentBounds,
         maximumBounds = maximumBounds,
         physicalDisplayBounds = physicalBounds,
-        safeInsets = getSafeWindowInsets(activity),
+        // Caption bars, cutouts and stable system bars belong to the window; IME does not
+        // turn a full-screen activity into a split-screen activity.
+        safeInsets = insets.toInsetsPx(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            ?: WindowInsetsPx.EMPTY,
         isPlatformMultiWindow = isActivityInMultiWindow(activity),
         isPictureInPicture = isActivityInPictureInPicture(activity),
-        isLaunchedFromBubble = isActivityLaunchedFromBubble(activity),
-        isLegacyMultiWindow = isLegacyMultiWindow
+        isLaunchedFromBubble = isInBubbleTask || isActivityLaunchedFromBubble(activity),
+        isLegacyMultiWindow = isLegacyMultiWindow,
+        hasReliableWindowMetrics = reliableMetrics,
+        navigationBarInsets = insets.toInsetsPx(WindowInsetsCompat.Type.navigationBars()),
+        statusBarInsets = insets.toInsetsPx(WindowInsetsCompat.Type.statusBars())
     )
 }
 
@@ -44,7 +66,7 @@ internal fun Rect.toWindowBoundsPx(): WindowBoundsPx {
 
 private fun isActivityInMultiWindow(activity: Activity?): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        activity?.isInMultiWindowMode == true
+        runCatching { activity?.isInMultiWindowMode == true }.getOrDefault(false)
     } else {
         false
     }
@@ -52,7 +74,7 @@ private fun isActivityInMultiWindow(activity: Activity?): Boolean {
 
 private fun isActivityInPictureInPicture(activity: Activity?): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        activity?.isInPictureInPictureMode == true
+        runCatching { activity?.isInPictureInPictureMode == true }.getOrDefault(false)
     } else {
         false
     }
@@ -60,7 +82,7 @@ private fun isActivityInPictureInPicture(activity: Activity?): Boolean {
 
 private fun isActivityLaunchedFromBubble(activity: Activity?): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        activity?.isLaunchedFromBubble == true
+        runCatching { activity?.isLaunchedFromBubble == true }.getOrDefault(false)
     } else {
         false
     }
@@ -157,18 +179,8 @@ private fun getDisplayRectBounds(context: Context): WindowBoundsPx {
     return WindowBoundsPx(left = 0, top = 0, width = metrics.widthPixels, height = metrics.heightPixels)
 }
 
-private fun getSafeWindowInsets(activity: Activity?): WindowInsetsPx {
-    val decorView = activity?.window?.decorView ?: return WindowInsetsPx.EMPTY
-    return getSafeWindowInsets(decorView)
-}
-
-private fun getSafeWindowInsets(view: View): WindowInsetsPx {
-    val insets = ViewCompat.getRootWindowInsets(view)
-        ?.getInsets(
-            WindowInsetsCompat.Type.systemBars() or
-                    WindowInsetsCompat.Type.displayCutout()
-        )
-        ?: return WindowInsetsPx.EMPTY
+private fun WindowInsetsCompat?.toInsetsPx(types: Int): WindowInsetsPx? {
+    val insets = this?.getInsetsIgnoringVisibility(types) ?: return null
     return WindowInsetsPx(
         left = insets.left,
         top = insets.top,

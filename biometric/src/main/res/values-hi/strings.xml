@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">जारी रखने के लिए अपना स्क्रीन लॉक दर्ज करें</string>
     <string name="biometriccompat_fingerprint_error_lockout">बहुत अधिक प्रयास। कृपया बाद में फिर से कोशिश करें।</string>
     <string name="biometriccompat_fingerprint_not_recognized">पहचाना नहीं गया</string>
+    <string name="biometriccompat_modality_unverifiable">यह सिस्टम API अनुरोधित बायोमेट्रिक सेंसर की पुष्टि नहीं कर सकता। कोई भी बायोमेट्रिक तरीका या समर्थित सेंसर-विशिष्ट API चुनें।</string>
 </resources>
 
 

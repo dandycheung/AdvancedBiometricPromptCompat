@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">顔用カメラを利用できません</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">顔をカメラに合わせてください</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">顔認証を設定するために顔を合わせてください</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">信頼できるカメラからの撮影が必要です</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">生体検知のため、%1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">正面を向いてください</string>
+    <string name="biometriccompat_tf_face_challenge_left">頭を少し左に向けてください</string>
+    <string name="biometriccompat_tf_face_challenge_right">頭を少し右に向けてください</string>
 </resources>

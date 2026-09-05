@@ -34,6 +34,15 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit) {
     private var stopWatcher: Runnable? = null
+    private var observedHost: androidx.fragment.app.FragmentActivity? = null
+    private val pendingHostDismiss = PendingAuthStart(ExecutorHelper::postDelayed, ExecutorHelper::removeCallbacks)
+    private val hostLifecycleObserver = LifecycleEventObserver { _, event ->
+        if (shouldCancelPendingLifecycleDismiss(event)) {
+            pendingHostDismiss.cancel()
+        } else if (shouldDismissForHostLifecycle(event)) {
+            pendingHostDismiss.schedule(0) { if (stopWatcher != null) callback() }
+        }
+    }
     private val pendingFragmentDismiss = PendingAuthStart(ExecutorHelper::postDelayed, ExecutorHelper::removeCallbacks)
     private val pendingLifecycleDismiss = PendingAuthStart(ExecutorHelper::postDelayed, ExecutorHelper::removeCallbacks)
     private val homeWatcher = HomeWatcher(object : HomeWatcher.OnHomePressedListener {
@@ -67,7 +76,7 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
         }
 
         @SuppressLint("RestrictedApi")
-        override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
+        override fun onFragmentStarted(fm: FragmentManager, f: Fragment) {
             if (f is androidx.biometric.BiometricFragment ||
                 f is androidx.biometric.FingerprintDialogFragment ||
                 f is dev.skomlach.biometric.compat.impl.dialogs.BiometricPromptCompatDialog
@@ -82,7 +91,7 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
         }
 
         @SuppressLint("RestrictedApi")
-        override fun onFragmentPaused(fm: FragmentManager, f: Fragment) {
+        override fun onFragmentStopped(fm: FragmentManager, f: Fragment) {
             if (f is androidx.biometric.BiometricFragment ||
                 f is androidx.biometric.FingerprintDialogFragment ||
                 f is dev.skomlach.biometric.compat.impl.dialogs.BiometricPromptCompatDialog
@@ -114,7 +123,7 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
                 return
             }
             when (event) {
-                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> {
+                Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> {
                     pendingLifecycleDismiss.cancel()
                     val delay =
                         impl.builder.getContext().resources.getInteger(android.R.integer.config_longAnimTime)
@@ -129,14 +138,18 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
 
     fun attachListeners() {
         detachListeners()
+        // Another Activity may remain resumed in split-screen or a Bubble task. Observe
+        // this authentication host as well as the process; PAUSE/focus loss is not invisibility.
+        observedHost = impl.builder.getActivity()
+        observedHost?.lifecycle?.addObserver(hostLifecycleObserver)
         try {
-            impl.builder.getActivity()?.supportFragmentManager?.unregisterFragmentLifecycleCallbacks(
+            observedHost?.supportFragmentManager?.unregisterFragmentLifecycleCallbacks(
                 fragmentLifecycleCallbacks
             )
         } catch (ignore: Throwable) {
         }
         try {
-            impl.builder.getActivity()?.supportFragmentManager?.registerFragmentLifecycleCallbacks(
+            observedHost?.supportFragmentManager?.registerFragmentLifecycleCallbacks(
                 fragmentLifecycleCallbacks,
                 false
             )
@@ -150,13 +163,14 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
     }
 
     fun detachListeners() {
+        pendingHostDismiss.cancel()
         pendingFragmentDismiss.cancel()
         pendingLifecycleDismiss.cancel()
         fragmentLifecycleCallbacks.reset()
         stopWatcher?.run()
         stopWatcher = null
         try {
-            impl.builder.getActivity()?.supportFragmentManager?.unregisterFragmentLifecycleCallbacks(
+            observedHost?.supportFragmentManager?.unregisterFragmentLifecycleCallbacks(
                 fragmentLifecycleCallbacks
             )
         } catch (ignore: Throwable) {
@@ -165,9 +179,14 @@ class AppBackgroundDetector(val impl: IBiometricPromptImpl, callback: () -> Unit
             ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleEventObserver)
         } catch (ignore: Throwable) {
         }
+        observedHost?.lifecycle?.removeObserver(hostLifecycleObserver)
+        observedHost = null
     }
 }
 
 internal fun shouldCancelPendingLifecycleDismiss(event: Lifecycle.Event): Boolean {
     return event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME
 }
+
+internal fun shouldDismissForHostLifecycle(event: Lifecycle.Event): Boolean =
+    event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY

@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">A câmera facial não está disponível</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Alinhe seu rosto com a câmera</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Alinhe seu rosto para configurar o desbloqueio facial</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">É necessária uma captura de câmera confiável</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Para verificar sua presença real, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">olhe para a frente</string>
+    <string name="biometriccompat_tf_face_challenge_left">vire a cabeça levemente para a esquerda</string>
+    <string name="biometriccompat_tf_face_challenge_right">vire a cabeça levemente para a direita</string>
 </resources>

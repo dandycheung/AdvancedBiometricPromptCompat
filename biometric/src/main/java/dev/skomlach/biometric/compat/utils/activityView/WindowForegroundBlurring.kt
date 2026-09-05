@@ -83,6 +83,8 @@ class WindowForegroundBlurring(
 
     private val biometricTypesList: List<BiometricType>
         get() {
+            // System prompt ownership suppresses the compat dialog, not these status icons.
+            // RenderEffect belongs to contentView; this sibling overlay stays sharp.
             return if (!isBlurViewAttachedToHost) {
                 emptyList()
             } else {

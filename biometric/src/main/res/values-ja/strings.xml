@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">続行するには画面ロックを入力してください</string>
     <string name="biometriccompat_fingerprint_error_lockout">試行回数が多すぎます。後でもう一度お試しください。</string>
     <string name="biometriccompat_fingerprint_not_recognized">認識されませんでした</string>
+    <string name="biometriccompat_modality_unverifiable">このシステム API では、要求された生体認証センサーを検証できません。任意の生体認証方式、または対応するセンサー専用 API を選択してください。</string>
 </resources>
 
 

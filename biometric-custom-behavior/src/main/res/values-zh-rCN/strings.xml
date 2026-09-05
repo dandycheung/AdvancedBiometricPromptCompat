@@ -41,6 +41,8 @@
     <string name="biometriccompat_behavior_key_space">空格</string>
     <string name="biometriccompat_behavior_key_backspace">&lt;</string>
     <string name="biometriccompat_behavior_status_checking">正在检查行为</string>
+    <string name="biometriccompat_behavior_error_capture_invalid">采集已中断或无效。请重试。</string>
+    <string name="biometriccompat_behavior_error_accessibility">不受信任的无障碍服务正在运行。请将其停用后重试。</string>
 </resources>
 
 

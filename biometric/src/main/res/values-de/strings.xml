@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Geben Sie Ihre Bildschirmsperre ein, um fortzufahren</string>
     <string name="biometriccompat_fingerprint_error_lockout">Zu viele Versuche. Bitte versuchen Sie es später erneut.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Nicht erkannt</string>
+    <string name="biometriccompat_modality_unverifiable">Diese System-API kann den angeforderten biometrischen Sensor nicht verifizieren. Wählen Sie eine beliebige biometrische Methode oder eine unterstützte sensorspezifische API.</string>
 </resources>
 
 

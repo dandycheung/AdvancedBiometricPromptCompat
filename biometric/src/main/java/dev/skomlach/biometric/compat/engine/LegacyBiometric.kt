@@ -81,6 +81,7 @@ object LegacyBiometric {
 
     private val initInProgress = AtomicBoolean(false)
     private val authInProgress = AtomicBoolean(false)
+    private val joinedSession = LegacyAuthSession()
     private val pendingAuthStart = PendingAuthStart(ExecutorHelper::postDelayed, ExecutorHelper::removeCallbacks)
 
     @Volatile
@@ -424,13 +425,48 @@ object LegacyBiometric {
         provider: BiometricProviderType = BiometricProviderType.COMBINED,
         excludedModuleTags: Set<Int> = emptySet(),
         allowCryptoFallback: Boolean = false
+    ) = authenticateInternal(biometricCryptographyPurpose, targetView, requestedMethods, listener,
+        bundle, provider, excludedModuleTags, allowCryptoFallback, null)
+
+    internal fun authenticateInSession(
+        owner: Any,
+        biometricCryptographyPurpose: BiometricCryptographyPurpose?,
+        targetView: SurfaceView?,
+        requestedMethods: List<BiometricType?>,
+        listener: LegacyBiometricAuthenticationListener,
+        bundle: Bundle?,
+        provider: BiometricProviderType,
+        excludedModuleTags: Set<Int>,
+        allowCryptoFallback: Boolean
+    ) = authenticateInternal(biometricCryptographyPurpose, targetView, requestedMethods, listener,
+        bundle, provider, excludedModuleTags, allowCryptoFallback, owner)
+
+    @Synchronized
+    private fun authenticateInternal(
+        biometricCryptographyPurpose: BiometricCryptographyPurpose?,
+        targetView: SurfaceView?,
+        requestedMethods: List<BiometricType?>,
+        listener: LegacyBiometricAuthenticationListener,
+        bundle: Bundle?,
+        provider: BiometricProviderType,
+        excludedModuleTags: Set<Int>,
+        allowCryptoFallback: Boolean,
+        owner: Any?
     ) {
-        if (authInProgress.get() || requestedMethods.isEmpty()) {
+        val joining = owner != null && joinedSession.owns(owner)
+        if ((!joining && (authInProgress.get() || joinedSession.isOccupied())) || requestedMethods.isEmpty()) {
             e("BiometricAuthentication not started, wrong state")
             return
         }
 
         if (initInProgress.get()) {
+            if (owner != null) {
+                // Session callers run after module preflight. Never replay their work as an
+                // unowned request via the legacy initialization retry queue.
+                listener.onFailure(AuthenticationResult(requestedMethods.firstOrNull(),
+                    reason = AuthenticationFailureReason.HARDWARE_UNAVAILABLE))
+                return
+            }
             val viewRef = WeakReference(targetView)
             val methodsRef = requestedMethods.filterNotNull()
             retryAuthenticationAfterInit(
@@ -449,11 +485,15 @@ object LegacyBiometric {
 
 
         val activeModules = HashMap<Int, BiometricType>()
-        Core.cleanModules()
+        var selectedAnyModule = false
+        if (!joining) Core.cleanModules()
+        if (owner != null && !joinedSession.claim(owner)) return
 
         val isEnroll = bundle?.getBoolean(BundleBuilder.ENROLL, false) == true
         requestedMethods.filterNotNull().forEach { type ->
             getPreferredBiometricModule(type, provider, isEnroll, excludedModuleTags)?.let { module ->
+                selectedAnyModule = true
+                if (owner != null && !joinedSession.add(owner, module.tag())) return@let
                 Core.registerModule(module)
                 if (module is FacelockOldModule) module.setCallerView(targetView)
                 if (module is SoterFaceUnlockModule) module.bundle = bundle
@@ -464,6 +504,7 @@ object LegacyBiometric {
         }
         d("BiometricAuthentication.authenticate $activeModules")
         if (activeModules.isEmpty()) {
+            if (selectedAnyModule && joining) return
             listener.onFailure(
                 AuthenticationResult(
                     requestedMethods.firstOrNull(),
@@ -476,12 +517,14 @@ object LegacyBiometric {
         authInProgress.set(true)
         val listenerRef = SoftReference(listener)
 
-        Core.authenticate(biometricCryptographyPurpose, object : AuthenticationListener {
+        Core.authenticateSelected(biometricCryptographyPurpose, object : AuthenticationListener {
             override fun onHelp(msg: CharSequence?) {
+                if (owner != null && !joinedSession.owns(owner)) return
                 listenerRef.get()?.onHelp(msg)
             }
 
             override fun onSuccess(tag: Int, crypto: BiometricCryptoObject?) {
+                if (owner != null && !joinedSession.owns(owner)) return
                 authInProgress.set(false)
                 listenerRef.get()?.onSuccess(AuthenticationResult(activeModules[tag], crypto))
             }
@@ -491,6 +534,7 @@ object LegacyBiometric {
                 reason: AuthenticationFailureReason?,
                 desc: CharSequence?
             ) {
+                if (owner != null && !joinedSession.owns(owner)) return
                 if (reason == AuthenticationFailureReason.MISSING_PERMISSIONS_ERROR) {
                     authInProgress.set(false)
                 }
@@ -508,6 +552,7 @@ object LegacyBiometric {
                 reason: AuthenticationFailureReason?,
                 desc: CharSequence?
             ) {
+                if (owner != null && !joinedSession.owns(owner)) return
                 authInProgress.set(false)
                 listenerRef.get()?.onCanceled(
                     AuthenticationResult(
@@ -517,7 +562,8 @@ object LegacyBiometric {
                     )
                 )
             }
-        }, allowCryptoFallback = allowCryptoFallback)
+        }, allowCryptoFallback = allowCryptoFallback, moduleTags = activeModules.keys,
+            isActive = { owner == null || joinedSession.owns(owner) })
     }
 
     private fun retryAuthenticationAfterInit(
@@ -561,7 +607,9 @@ object LegacyBiometric {
         }
     }
 
+    @Synchronized
     fun cancelAuthentication() {
+        joinedSession.clear()
         pendingAuthStart.cancel()
         // A module callback may already have released the start gate. The remaining
         // modules still own live cancellation signals and must always be stopped.

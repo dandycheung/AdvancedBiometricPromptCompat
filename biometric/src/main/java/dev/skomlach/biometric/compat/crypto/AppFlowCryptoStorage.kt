@@ -23,8 +23,8 @@ object AppFlowCryptoStorage {
         write = { name, secret -> secretPrefs.edit().putString(name, secret).commit() }
     )
 
-    internal fun getProtectedSecret(keyName: String, create: Boolean): CharArray =
-        secrets.getSecret(keyName, create)
+    internal fun getProtectedSecret(keyName: String, create: Boolean, allowLegacy: Boolean = true): CharArray =
+        secrets.getSecret(keyName, create, allowLegacy)
 
     fun getOrCreateSalt(keyName: String): ByteArray {
         val existing = prefs.getString(SALT_PREFIX + keyName, null)

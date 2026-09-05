@@ -20,6 +20,7 @@
 package dev.skomlach.common.multiwindow
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -35,14 +36,36 @@ import dev.skomlach.common.R
 import dev.skomlach.common.contextprovider.AndroidContext
 import dev.skomlach.common.contextprovider.getFixedContext
 import dev.skomlach.common.logging.LogCat
+import java.lang.ref.WeakReference
 
-class MultiWindowSupport private constructor() {
+class MultiWindowSupport private constructor(
+    private val activityReference: WeakReference<Activity>? = null,
+    private val isInBubbleTask: Boolean = false
+) {
+    private val hostActivity: Activity?
+        get() = if (activityReference == null) AndroidContext.activity else activityReference.get()
+    private val hostContext: Context
+        get() = hostActivity ?: AndroidContext.appContext
+    private val isHostTablet: Boolean
+        get() = hostContext.resources.configuration.smallestScreenWidthDp >= 600 ||
+                hostContext.resources.getBoolean(R.bool.biometric_compat_is_tablet)
+
     companion object {
         @SuppressLint("StaticFieldLeak")
         private val instance = MultiWindowSupport()
         fun get(): MultiWindowSupport {
             return instance
         }
+
+        /** Use the actual dialog/auth host, not the last resumed Activity in the process. */
+        fun get(activity: Activity): MultiWindowSupport = MultiWindowSupport(WeakReference(activity))
+
+        /**
+         * Optional task-scoped hint from the host app (e.g. a child Activity in a Bubble task).
+         * Presentation only: does not grant authentication or determine biometric UI ownership.
+         */
+        fun get(activity: Activity, isInBubbleTask: Boolean): MultiWindowSupport =
+            MultiWindowSupport(WeakReference(activity), isInBubbleTask)
 
         fun isTablet(): Boolean {
             val ctx = AndroidContext.activity ?: AndroidContext.appContext
@@ -67,7 +90,7 @@ class MultiWindowSupport private constructor() {
     //Unlike Android N method, this one support also non-Nougat+ multiwindow modes (like Samsung/LG/Huawei/etc solutions)
     private fun checkIsInMultiWindow(): Boolean {
         val rect = Rect()
-        val decorView = AndroidContext.activity?.findViewById<ViewGroup>(Window.ID_ANDROID_CONTENT)
+        val decorView = hostActivity?.findViewById<ViewGroup>(Window.ID_ANDROID_CONTENT)
             ?: return false
         decorView.getGlobalVisibleRect(rect)
         if (rect.width() == 0 && rect.height() == 0) {
@@ -79,7 +102,7 @@ class MultiWindowSupport private constructor() {
         val navigationBarWidth = navigationBarWidth
         var h = realScreenSize.y - rect.height() - statusBarHeight - navigationBarHeight
         var w = realScreenSize.x - rect.width()
-        val isSmartphone = !isTablet()
+        val isSmartphone = !isHostTablet
         if (isSmartphone && screenOrientation == Configuration.ORIENTATION_LANDSCAPE) {
             h += navigationBarHeight
             w -= navigationBarWidth
@@ -89,7 +112,7 @@ class MultiWindowSupport private constructor() {
         decorView.getLocationOnScreen(locationOnScreen)
 
         val sb = StringBuilder()
-        sb.append(AndroidContext.activity?.javaClass?.simpleName + " Activity screen:")
+        sb.append(hostActivity?.javaClass?.simpleName + " Activity screen:")
         log("isMultiWindow $isMultiWindow", sb)
         log("final " + w + "x" + h + "", sb)
         log("NavBarW/H " + navigationBarWidth + "x" + navigationBarHeight, sb)
@@ -109,7 +132,7 @@ class MultiWindowSupport private constructor() {
         val windowState = currentWindowStateWithLegacyFallback()
         val isWindowOnScreenBottom = windowState.isWindowOnScreenBottom
         val sb = StringBuilder()
-        sb.append(AndroidContext.activity?.javaClass?.simpleName + " Activity screen:")
+        sb.append(hostActivity?.javaClass?.simpleName + " Activity screen:")
         log("isWindowOnScreenBottom $isWindowOnScreenBottom", sb)
         log("currentWindow ${windowState.currentBounds}", sb)
         log("maximumWindow ${windowState.maximumBounds}", sb)
@@ -124,7 +147,7 @@ class MultiWindowSupport private constructor() {
         get() {
             val windowState = currentWindowStateWithLegacyFallback()
             val sb = StringBuilder()
-            sb.append(AndroidContext.activity?.javaClass?.simpleName + " Activity screen:")
+            sb.append(hostActivity?.javaClass?.simpleName + " Activity screen:")
             log("isMultiWindow ${windowState.isInWindowedMode}", sb)
             log("platform ${windowState.isPlatformMultiWindow}", sb)
             log("pip ${windowState.isPictureInPicture}", sb)
@@ -142,11 +165,11 @@ class MultiWindowSupport private constructor() {
         try {
             val clazz = Class.forName("meizu.splitmode.FlymeSplitModeManager")
             val b = clazz.getMethod("getInstance", Context::class.java)
-            val instance = b.invoke(null, AndroidContext.activity ?: return false)
+            val instance = b.invoke(null, hostActivity ?: return false)
             val m = clazz.getMethod("isSplitMode")
             val isMultiWindow = m.invoke(instance) as Boolean
             val sb = StringBuilder()
-            sb.append(AndroidContext.activity?.javaClass?.simpleName + " Activity screen:")
+            sb.append(hostActivity?.javaClass?.simpleName + " Activity screen:")
             log("isMultiWindow $isMultiWindow", sb)
             LogCat.logError(sb.toString())
             if (isMultiWindow) {
@@ -154,7 +177,7 @@ class MultiWindowSupport private constructor() {
             }
         } catch (ignore: Throwable) {
         }
-        return if (AndroidContext.activity != null) {
+        return if (hostActivity != null) {
             //general way - for OEM devices (Samsung, LG, Huawei) and/or in case API24 not fired for some reasons
             checkIsInMultiWindow()
         } else {
@@ -174,7 +197,8 @@ class MultiWindowSupport private constructor() {
     val canLockCurrentOrientation: Boolean
         get() {
             val windowState = currentWindowStateWithLegacyFallback()
-            return !windowState.isInWindowedMode && windowState.orientation != WindowOrientation.SQUARE
+            return canLockWindowOrientation(windowState, Build.VERSION.SDK_INT,
+                hostContext.resources.configuration.smallestScreenWidthDp)
         }
 
     val requestedScreenOrientation: Int
@@ -202,7 +226,7 @@ class MultiWindowSupport private constructor() {
     }
 
     fun getNavBarDividerHeight(): Int {
-        val res = (AndroidContext.activity ?: AndroidContext.appContext).resources
+        val res = hostContext.resources
         val id = res.getIdentifier(
             "navigation_bar_divider_height",
             "dimen",
@@ -213,12 +237,13 @@ class MultiWindowSupport private constructor() {
 
     val navigationBarHeight: Int
         get() {
+            currentWindowState().navigationBarInsets?.let { return maxOf(it.top, it.bottom) }
             if (!hasNavBar()) {
                 return 0
             }
-            val resources = (AndroidContext.activity ?: AndroidContext.appContext).resources
+            val resources = hostContext.resources
             val orientation = screenOrientation
-            val isSmartphone = !isTablet()
+            val isSmartphone = !isHostTablet
             val resourceId: Int = if (!isSmartphone) {
                 resources.getIdentifier(
                     if (orientation == Configuration.ORIENTATION_PORTRAIT) "navigation_bar_height" else "navigation_bar_height_landscape",
@@ -238,12 +263,13 @@ class MultiWindowSupport private constructor() {
         }
     val navigationBarWidth: Int
         get() {
+            currentWindowState().navigationBarInsets?.let { return maxOf(it.left, it.right) }
             if (!hasNavBar()) {
                 return 0
             }
-            val resources = (AndroidContext.activity ?: AndroidContext.appContext).resources
+            val resources = hostContext.resources
             val orientation = screenOrientation
-            val isSmartphone = !isTablet()
+            val isSmartphone = !isHostTablet
             val resourceId: Int = if (!isSmartphone) {
                 resources.getIdentifier(
                     if (orientation == Configuration.ORIENTATION_PORTRAIT) "navigation_bar_height_landscape" else "navigation_bar_height",
@@ -264,6 +290,7 @@ class MultiWindowSupport private constructor() {
 
     fun hasNavBar(): Boolean {
         val windowState = currentWindowState()
+        windowState.navigationBarInsets?.let { return maxOf(it.left, it.top, it.right, it.bottom) > 0 }
         val realHeight = windowState.physicalDisplayBounds.height
         val realWidth = windowState.physicalDisplayBounds.width
         val displayHeight = windowState.currentBounds.height
@@ -273,12 +300,12 @@ class MultiWindowSupport private constructor() {
         }
         val hasMenuKey =
             ViewConfiguration.get(
-                AndroidContext.activity ?: AndroidContext.appContext.getFixedContext()
+                hostContext.getFixedContext()
             ).hasPermanentMenuKey()
         val hasBackKey = KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_BACK)
         val hasHomeKey = KeyCharacterMap.deviceHasKey(KeyEvent.KEYCODE_HOME)
         val hasNoCapacitiveKeys = !hasMenuKey && !hasBackKey && !hasHomeKey
-        val resources = (AndroidContext.activity ?: AndroidContext.appContext).resources
+        val resources = hostContext.resources
         val id = resources.getIdentifier("config_showNavigationBar", "bool", "android")
         val hasOnScreenNavBar = id > 0 && resources.getBoolean(id)
         return hasOnScreenNavBar || hasNoCapacitiveKeys
@@ -287,17 +314,17 @@ class MultiWindowSupport private constructor() {
     // status bar height
     val statusBarHeight: Int
         get() {
+            currentWindowState().statusBarInsets?.let { return maxOf(it.top, it.bottom) }
             // status bar height
             var statusBarHeight = 0
             val resourceId =
-                (AndroidContext.activity ?: AndroidContext.appContext).resources.getIdentifier(
+                hostContext.resources.getIdentifier(
                     "status_bar_height",
                     "dimen",
                     "android"
                 )
             if (resourceId > 0) {
-                statusBarHeight = (AndroidContext.activity
-                    ?: AndroidContext.appContext).resources.getDimensionPixelSize(resourceId)
+                statusBarHeight = hostContext.resources.getDimensionPixelSize(resourceId)
             }
             return statusBarHeight
         }//This should be close, as lower API devices should not have window navigation bars//this may not be 100% accurate, but it's all we've got//reflection for this weird in-between time
@@ -324,15 +351,16 @@ class MultiWindowSupport private constructor() {
         legacyMultiWindow: Boolean = false
     ): WindowState {
         return buildWindowState(
-            activity = AndroidContext.activity,
-            fallbackContext = AndroidContext.appContext.getFixedContext(),
-            isLegacyMultiWindow = legacyMultiWindow
+            activity = hostActivity,
+            fallbackContext = hostContext,
+            isLegacyMultiWindow = legacyMultiWindow,
+            isInBubbleTask = isInBubbleTask
         )
     }
 
     private fun currentWindowStateWithLegacyFallback(): WindowState {
         val windowState = currentWindowState()
-        if (windowState.isInWindowedMode || AndroidContext.activity == null) {
+        if (!windowState.needsLegacyWindowDetection || hostActivity == null) {
             return windowState
         }
         val legacyMultiWindow = checkLegacyMultiWindow()

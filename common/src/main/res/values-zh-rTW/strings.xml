@@ -10,4 +10,5 @@
     <string name="biometriccompat_global_action_settings">設定</string>
     <string name="biometriccompat_turn_on_settings_action">在設定中啟用</string>
     <string name="biometriccompat_error_message_change_not_allowed">您的管理員不允許此變更</string>
+    <string name="biometriccompat_permissions_settings_message">如要繼續，請在應用程式設定中授予以下權限：\n%1$s</string>
 </resources>

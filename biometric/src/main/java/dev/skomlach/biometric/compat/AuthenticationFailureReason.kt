@@ -91,5 +91,8 @@ enum class AuthenticationFailureReason {
 
     BIOMETRIC_ALREADY_STARTED,
 
-    CRYPTO_ERROR
+    CRYPTO_ERROR,
+
+    /** The selected API cannot prove which individual biometric sensor was used. */
+    UNSUPPORTED_AUTHENTICATION_TYPE
 }

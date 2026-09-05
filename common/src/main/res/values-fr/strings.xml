@@ -10,4 +10,5 @@
     <string name="biometriccompat_global_action_settings">Paramètres</string>
     <string name="biometriccompat_turn_on_settings_action">Activer dans les paramètres</string>
     <string name="biometriccompat_error_message_change_not_allowed">Cette modification n\'est pas autorisée par votre administrateur</string>
+    <string name="biometriccompat_permissions_settings_message">Pour continuer, accordez les autorisations suivantes dans les paramètres de l’application :\n%1$s</string>
 </resources>

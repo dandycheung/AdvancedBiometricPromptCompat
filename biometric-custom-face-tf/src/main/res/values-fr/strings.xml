@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">La caméra faciale n’est pas disponible</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Alignez votre visage avec la caméra</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Alignez votre visage pour configurer le déverrouillage facial</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Une capture fiable par la caméra est requise</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Pour vérifier votre présence réelle, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">regardez droit devant vous</string>
+    <string name="biometriccompat_tf_face_challenge_left">tournez légèrement la tête vers la gauche</string>
+    <string name="biometriccompat_tf_face_challenge_right">tournez légèrement la tête vers la droite</string>
 </resources>

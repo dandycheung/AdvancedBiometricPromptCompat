@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">كاميرا الوجه غير متاحة</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">حاذِ وجهك مع الكاميرا</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">حاذِ وجهك لإعداد إلغاء القفل بالوجه</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">يلزم التقاط موثوق من الكاميرا</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">للتحقق من الحيوية، %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">انظر إلى الأمام مباشرة</string>
+    <string name="biometriccompat_tf_face_challenge_left">أدر رأسك قليلاً إلى اليسار</string>
+    <string name="biometriccompat_tf_face_challenge_right">أدر رأسك قليلاً إلى اليمين</string>
 </resources>

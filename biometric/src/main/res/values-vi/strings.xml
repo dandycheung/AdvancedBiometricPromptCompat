@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Nhập khóa màn hình của bạn để tiếp tục</string>
     <string name="biometriccompat_fingerprint_error_lockout">Quá nhiều lần thử. Vui lòng thử lại sau.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Không nhận ra</string>
+    <string name="biometriccompat_modality_unverifiable">API hệ thống này không thể xác minh cảm biến sinh trắc học được yêu cầu. Hãy chọn phương thức sinh trắc học bất kỳ hoặc API dành riêng cho cảm biến được hỗ trợ.</string>
 </resources>
 
 

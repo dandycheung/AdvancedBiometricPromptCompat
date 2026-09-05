@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">Kamera wajah tidak tersedia</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Sejajarkan wajah Anda dengan kamera</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Sejajarkan wajah Anda untuk menyiapkan buka kunci wajah</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Diperlukan pengambilan gambar kamera yang tepercaya</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Untuk memastikan Anda benar-benar hadir, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">lihat lurus ke depan</string>
+    <string name="biometriccompat_tf_face_challenge_left">putar kepala sedikit ke kiri</string>
+    <string name="biometriccompat_tf_face_challenge_right">putar kepala sedikit ke kanan</string>
 </resources>

@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">Gezichtscamera is niet beschikbaar</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Lijn je gezicht uit met de camera</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Lijn je gezicht uit om gezichtsontgrendeling in te stellen</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Een vertrouwde cameraopname is vereist</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Om te controleren of u echt aanwezig bent: %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">kijk recht vooruit</string>
+    <string name="biometriccompat_tf_face_challenge_left">draai uw hoofd iets naar links</string>
+    <string name="biometriccompat_tf_face_challenge_right">draai uw hoofd iets naar rechts</string>
 </resources>

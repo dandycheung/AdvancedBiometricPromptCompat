@@ -27,6 +27,7 @@ import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.ContextThemeWrapper
@@ -36,6 +37,7 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.animation.AnimationUtils
 import android.widget.Button
@@ -105,6 +107,8 @@ class BiometricPromptCompatDialog : DialogFragment() {
     private var dismissDialogInterface: DialogInterface.OnDismissListener? = null
     private var cancelDialogInterface: DialogInterface.OnCancelListener? = null
     private var onShowDialogInterface: DialogInterface.OnShowListener? = null
+    private var hostLayoutObserver: ViewTreeObserver? = null
+    private val hostLayoutListener = ViewTreeObserver.OnGlobalLayoutListener { updateDialogWindowSize() }
 
     private val wallpaperChangedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -233,6 +237,8 @@ class BiometricPromptCompatDialog : DialogFragment() {
     }
 
     override fun onDestroyView() {
+        hostLayoutObserver?.takeIf { it.isAlive }?.removeOnGlobalLayoutListener(hostLayoutListener)
+        hostLayoutObserver = null
         authPreview?.holder?.surface?.release()
         super.onDestroyView()
     }
@@ -267,18 +273,12 @@ class BiometricPromptCompatDialog : DialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        hostLayoutObserver = requireActivity().window.decorView.viewTreeObserver.also {
+            it.addOnGlobalLayoutListener(hostLayoutListener)
+        }
+        updateDialogWindowSize()
         dialog?.let {
             it.window?.let { w ->
-                val wlp = w.attributes
-                val configuredWidth = resources.getDimensionPixelSize(R.dimen.dialog_width)
-                wlp.width = if (configuredWidth > 0) {
-                    MultiWindowSupport.get().resolveDialogWidth(configuredWidth)
-                } else {
-                    WindowManager.LayoutParams.MATCH_PARENT
-                }
-                wlp.height = WindowManager.LayoutParams.WRAP_CONTENT
-                wlp.gravity = Gravity.BOTTOM
-                w.attributes = wlp
                 (w.decorView as ViewGroup?)
                     ?.getChildAt(0)?.startAnimation(
                         AnimationUtils.loadAnimation(
@@ -289,6 +289,25 @@ class BiometricPromptCompatDialog : DialogFragment() {
             it.setOnCancelListener(cancelDialogInterface)
             it.setOnDismissListener(dismissDialogInterface)
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateDialogWindowSize()
+    }
+
+    private fun updateDialogWindowSize() {
+        val host = activity ?: return
+        val window = dialog?.window ?: return
+        val width = MultiWindowSupport.get(host)
+            .resolveDialogWidth(resources.getDimensionPixelSize(R.dimen.dialog_width))
+        val attributes = window.attributes
+        if (attributes.width == width && attributes.height == WindowManager.LayoutParams.WRAP_CONTENT &&
+            attributes.gravity == Gravity.BOTTOM) return
+        attributes.width = width
+        attributes.height = WindowManager.LayoutParams.WRAP_CONTENT
+        attributes.gravity = Gravity.BOTTOM
+        window.attributes = attributes
     }
 
     fun <T : View?> findViewById(id: Int): T? {

@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">La fotocamera per il volto non è disponibile</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Allinea il volto con la fotocamera</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Allinea il volto per configurare lo sblocco facciale</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">È necessaria un’acquisizione attendibile dalla fotocamera</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Per verificare la tua presenza reale, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">guarda dritto davanti a te</string>
+    <string name="biometriccompat_tf_face_challenge_left">gira leggermente la testa a sinistra</string>
+    <string name="biometriccompat_tf_face_challenge_right">gira leggermente la testa a destra</string>
 </resources>

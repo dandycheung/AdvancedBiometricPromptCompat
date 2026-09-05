@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Masukkan kunci layar Anda untuk melanjutkan</string>
     <string name="biometriccompat_fingerprint_error_lockout">Terlalu banyak percobaan. Silakan coba lagi nanti.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Tidak dikenali</string>
+    <string name="biometriccompat_modality_unverifiable">API sistem ini tidak dapat memverifikasi sensor biometrik yang diminta. Pilih metode biometrik apa pun atau API khusus sensor yang didukung.</string>
 </resources>
 
 

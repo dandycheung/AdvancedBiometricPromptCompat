@@ -31,10 +31,6 @@ import android.provider.Settings
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.core.content.IntentCompat
-import androidx.core.content.PackageManagerCompat
-import androidx.core.content.UnusedAppRestrictionsConstants
 import androidx.core.content.edit
 import androidx.core.text.TextUtilsCompat
 import androidx.core.view.ViewCompat
@@ -42,7 +38,6 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
-import com.google.common.util.concurrent.ListenableFuture
 import dev.skomlach.common.R
 import dev.skomlach.common.contextprovider.AndroidContext
 import dev.skomlach.common.contextprovider.AndroidContext.appContext
@@ -142,33 +137,23 @@ class PermissionsFragment : Fragment() {
 
     private var alert: Dialog? = null
     private val startForResultForPermissions =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
             LogCat.log("PermissionsFragment.ActivityResult()")
-            closeFragment()
+            val denied = grants.filterValues { !it }.keys
+            markDenied(denied)
+            if (denied.isNotEmpty() && isAdded && denied.none {
+                    ActivityCompat.shouldShowRequestPermissionRationale(requireActivity(), it)
+                }) {
+                showMandatoryPermissionsNeedDialog(denied.toList())
+            } else {
+                closeFragment()
+            }
         }
     private val startForResult: ActivityResultLauncher<Intent> =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            if (it.resultCode == Activity.RESULT_OK) {
-                closeFragment()
-
-            } else { //workaround
-                val observer = object : Observer<Activity?> {
-                    private var waitForResume = false
-                    override fun onChanged(t: Activity?) {
-                        if (t == null) {
-                            waitForResume = true
-                            return
-                        }
-                        if (waitForResume && t == activity) {
-                            AndroidContext.resumedActivityLiveData.removeObserver(this)
-                            closeFragment()
-                        }
-
-
-                    }
-                }
-                AndroidContext.resumedActivityLiveData.observeForever(observer)
-            }
+            // App settings normally returns RESULT_CANCELED, including after granting access.
+            // The caller rechecks actual permissions; waiting for another pause/resume hangs it.
+            closeFragment()
         }
 
     override fun onDestroyView() {
@@ -196,69 +181,6 @@ class PermissionsFragment : Fragment() {
             }
         }
 
-    }
-
-    private fun unusedAppRestrictionsDisabled() {
-        val permissions: List<String> = arguments?.getStringArrayList(LIST_KEY) ?: listOf()
-        if (!permissions.any {
-                ActivityCompat.shouldShowRequestPermissionRationale(
-                    requireActivity(),
-                    it
-                )
-            } && previouslyDeniedPermissions(permissions).isNotEmpty()
-        ) {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            val uri = Uri.fromParts("package", requireActivity().packageName, null)
-            intent.data = uri
-            startForResult.launch(intent)
-        } else
-            closeFragment()
-    }
-
-    private fun onResult(appRestrictionsStatus: Int) {
-        when (appRestrictionsStatus) {
-            // If the user doesn't start your app for months, its permissions
-            // will be revoked and/or it will be hibernated.
-            // See the API_* constants for details.
-            UnusedAppRestrictionsConstants.API_30_BACKPORT,
-            UnusedAppRestrictionsConstants.API_30,
-            UnusedAppRestrictionsConstants.API_31 -> handleRestrictions()
-
-            // Status could not be fetched. Check logs for details.
-            UnusedAppRestrictionsConstants.ERROR,
-                // Restrictions do not apply to your app on this device.
-            UnusedAppRestrictionsConstants.FEATURE_NOT_AVAILABLE,
-                // Restrictions have been disabled by the user for your app.
-            UnusedAppRestrictionsConstants.DISABLED -> {
-                unusedAppRestrictionsDisabled()
-            }
-        }
-    }
-
-    private fun handleRestrictions() {
-        try {
-            // If your app works primarily in the background, you can ask the user
-            // to disable these restrictions. Check if you have already asked the
-            // user to disable these restrictions. If not, you can show a message to
-            // the user explaining why permission auto-reset and Hibernation should be
-            // disabled. Tell them that they will now be redirected to a page where
-            // they can disable these features.
-
-            val intent = IntentCompat.createManageUnusedAppRestrictionsIntent(
-                requireActivity(),
-                requireActivity().packageName
-            )
-
-            // Must use startActivityForResult(), not startActivity(), even if
-            // you don't use the result code returned in onActivityResult().
-
-            startForResult.launch(intent)
-        } catch (e: Throwable) {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            val uri = Uri.fromParts("package", requireActivity().packageName, null)
-            intent.data = uri
-            startForResult.launch(intent)
-        }
     }
 
     private fun requestPermissions(permissions: List<String>) {
@@ -352,32 +274,17 @@ class PermissionsFragment : Fragment() {
         val button =
             LocalizationHelper.getLocalizedString(
                 appContext,
-                R.string.biometriccompat_turn_on_settings_action
-            )
-        val isLeftToRight =
-            TextUtilsCompat.getLayoutDirectionFromLocale(AndroidContext.systemLocale) == ViewCompat.LAYOUT_DIRECTION_LTR
-        val textStart =
-            LocalizationHelper.getLocalizedString(
-                appContext,
-                R.string.biometriccompat_error_message_change_not_allowed
+                R.string.biometriccompat_global_action_settings
             )
         val textEnd = extractDescriptionsForPermissions(permissions)
-        val text = (if (isLeftToRight) "$textStart:" else ":$textStart") + "\n" + textEnd
 
         val title = resolveApplicationTitle(this)
         if (textEnd.isNullOrEmpty() || title.isEmpty()) {
-            try {
-                val future: ListenableFuture<Int> =
-                    PackageManagerCompat.getUnusedAppRestrictionsStatus(requireActivity())
-                future.addListener(
-                    { onResult(future.get()) },
-                    ContextCompat.getMainExecutor(requireActivity())
-                )
-            } catch (e: Throwable) {
-                unusedAppRestrictionsDisabled()
-            }
+            openAppPermissionSettings()
             return
         }
+
+        val text = permissionSettingsMessage(requireContext(), textEnd)
 
         alert = SystemMonetDialogs.showAlertDialog(
             requireActivity(),
@@ -392,20 +299,20 @@ class PermissionsFragment : Fragment() {
             ),
             onNegative = { closeFragment() },
             positiveText = button,
-            onPositive = {
-                try {
-                    val future: ListenableFuture<Int> =
-                        PackageManagerCompat.getUnusedAppRestrictionsStatus(requireActivity())
-                    future.addListener(
-                        { onResult(future.get()) },
-                        ContextCompat.getMainExecutor(requireActivity())
-                    )
-                } catch (e: Throwable) {
-                    unusedAppRestrictionsDisabled()
-                }
-            })
+            onPositive = { openAppPermissionSettings() })
     }
 
+
+    private fun openAppPermissionSettings() {
+        try {
+            startForResult.launch(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", requireActivity().packageName, null)
+            })
+        } catch (error: Throwable) {
+            LogCat.logException(error)
+            closeFragment()
+        }
+    }
 
     private fun closeFragment() {
         LogCat.logError("PermissionsFragment", "closeFragment")

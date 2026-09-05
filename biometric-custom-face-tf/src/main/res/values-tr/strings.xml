@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">Yüz kamerası kullanılamıyor</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Yüzünüzü kamerayla hizalayın</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Yüzünüzü hizalayarak yüzle kilit açmayı ayarlayın</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Güvenilir bir kamera çekimi gerekiyor</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Canlılık kontrolü için %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">doğrudan karşıya bakın</string>
+    <string name="biometriccompat_tf_face_challenge_left">başınızı hafifçe sola çevirin</string>
+    <string name="biometriccompat_tf_face_challenge_right">başınızı hafifçe sağa çevirin</string>
 </resources>

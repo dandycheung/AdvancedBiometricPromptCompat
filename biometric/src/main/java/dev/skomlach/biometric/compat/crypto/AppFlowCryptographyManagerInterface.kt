@@ -2,16 +2,11 @@ package dev.skomlach.biometric.compat.crypto
 
 import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl
 import javax.crypto.Cipher
-import javax.crypto.SecretKey
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 
 class AppFlowCryptographyManagerInterface : CryptographyManagerInterface {
 
     override val version: String
-        get() = "app-flow-v2"
+        get() = "app-flow-v4"
 
     override fun getInitializedCipherForEncryption(
         keyName: String,
@@ -22,10 +17,7 @@ class AppFlowCryptographyManagerInterface : CryptographyManagerInterface {
                 ?: throw IllegalStateException("App-flow session is not unlocked for key: $keyName")
             try {
                 val salt = AppFlowCryptoStorage.getOrCreateSalt(keyName)
-                val aesKey = deriveAesKey(secret, salt)
-                val cipher = getCipher()
-                cipher.init(Cipher.ENCRYPT_MODE, aesKey)
-                return cipher
+                return AppFlowCipherFactory.encrypt(secret, salt)
             } finally {
                 secret.fill('\u0000')
             }
@@ -43,16 +35,16 @@ class AppFlowCryptographyManagerInterface : CryptographyManagerInterface {
         try {
             val iv = initializationVector
                 ?: throw IllegalArgumentException("Initialization vector is required for decryption")
-            val secret = AppFlowSessionStore.consumeSecretOrNull(keyName)
+            val unlock = AppFlowSessionStore.consumeUnlockOrNull(keyName)
                 ?: throw IllegalStateException("App-flow session is not unlocked for key: $keyName")
+            val secret = unlock.secret
+            val legacySecret = if (unlock.allowLegacyDecryption) keyName.toCharArray().reversedArray() else null
             try {
                 val salt = AppFlowCryptoStorage.getOrCreateSalt(keyName)
-                val aesKey = deriveAesKey(secret, salt)
-                val cipher = getCipher()
-                cipher.init(Cipher.DECRYPT_MODE, aesKey, GCMParameterSpec(128, iv))
-                return cipher
+                return AppFlowCipherFactory.decrypt(secret, salt, iv, legacySecret)
             } finally {
                 secret.fill('\u0000')
+                legacySecret?.fill('\u0000')
             }
         } catch (e: Throwable) {
             BiometricLoggerImpl.e(e, "AppFlow decryption init failed. KeyName=$keyName")
@@ -65,16 +57,4 @@ class AppFlowCryptographyManagerInterface : CryptographyManagerInterface {
         AppFlowCryptoStorage.delete(keyName)
     }
 
-    private fun getCipher(): Cipher = Cipher.getInstance("AES/GCM/NoPadding")
-
-    private fun deriveAesKey(secret: CharArray, salt: ByteArray): SecretKey {
-        val spec = PBEKeySpec(secret, salt, 210_000, 256)
-        return try {
-            val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-            val encoded = factory.generateSecret(spec).encoded
-            SecretKeySpec(encoded, "AES")
-        } finally {
-            spec.clearPassword()
-        }
-    }
 }

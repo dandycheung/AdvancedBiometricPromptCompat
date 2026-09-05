@@ -41,6 +41,8 @@
     <string name="biometriccompat_behavior_key_space">spasi</string>
     <string name="biometriccompat_behavior_key_backspace">&lt;</string>
     <string name="biometriccompat_behavior_status_checking">Memeriksa perilaku</string>
+    <string name="biometriccompat_behavior_error_capture_invalid">Pengambilan terhenti atau tidak valid. Coba lagi.</string>
+    <string name="biometriccompat_behavior_error_accessibility">Layanan aksesibilitas yang tidak tepercaya sedang aktif. Nonaktifkan lalu coba lagi.</string>
 </resources>
 
 

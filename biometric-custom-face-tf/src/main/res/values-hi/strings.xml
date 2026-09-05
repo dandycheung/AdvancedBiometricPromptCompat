@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">फेस कैमरा उपलब्ध नहीं है</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">अपने चेहरे को कैमरे के साथ संरेखित करें</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">फेस अनलॉक सेट करने के लिए चेहरे को संरेखित करें</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">विश्वसनीय कैमरा कैप्चर आवश्यक है</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">जीवंतता की पुष्टि के लिए, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">सीधे सामने देखें</string>
+    <string name="biometriccompat_tf_face_challenge_left">अपना सिर थोड़ा बाईं ओर घुमाएँ</string>
+    <string name="biometriccompat_tf_face_challenge_right">अपना सिर थोड़ा दाईं ओर घुमाएँ</string>
 </resources>

@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">Gesichtskamera ist nicht verfügbar</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Richten Sie Ihr Gesicht zur Kamera aus</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Richten Sie Ihr Gesicht aus, um die Gesichtsentsperrung einzurichten</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Eine vertrauenswürdige Kameraaufnahme ist erforderlich</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Zur Lebenderkennung: %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">schauen Sie geradeaus</string>
+    <string name="biometriccompat_tf_face_challenge_left">drehen Sie den Kopf leicht nach links</string>
+    <string name="biometriccompat_tf_face_challenge_right">drehen Sie den Kopf leicht nach rechts</string>
 </resources>

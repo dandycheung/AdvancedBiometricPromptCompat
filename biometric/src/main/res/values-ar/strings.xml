@@ -117,4 +117,5 @@
     <string name="biometriccompat_screen_lock_prompt_message">أدخل قفل الشاشة للمتابعة</string>
     <string name="biometriccompat_fingerprint_error_lockout">محاولات كثيرة جدًا. يُرجى المحاولة مرة أخرى لاحقًا.</string>
     <string name="biometriccompat_fingerprint_not_recognized">غير معروف</string>
+    <string name="biometriccompat_modality_unverifiable">لا يمكن لواجهة برمجة تطبيقات النظام هذه التحقق من مستشعر المقاييس الحيوية المطلوب. اختر أي طريقة بيومترية أو واجهة مدعومة خاصة بالمستشعر.</string>
 </resources>

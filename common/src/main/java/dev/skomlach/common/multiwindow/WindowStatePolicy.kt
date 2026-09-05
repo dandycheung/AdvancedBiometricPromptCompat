@@ -47,7 +47,10 @@ internal data class WindowState(
     val isPlatformMultiWindow: Boolean,
     val isPictureInPicture: Boolean,
     val isLaunchedFromBubble: Boolean,
-    val isLegacyMultiWindow: Boolean
+    val isLegacyMultiWindow: Boolean,
+    val hasReliableWindowMetrics: Boolean = false,
+    val navigationBarInsets: WindowInsetsPx? = null,
+    val statusBarInsets: WindowInsetsPx? = null
 ) {
     val safeCurrentWindowWidth: Int
         get() = (currentBounds.width - safeInsets.left - safeInsets.right).coerceAtLeast(0)
@@ -85,6 +88,9 @@ internal data class WindowState(
 
     val isWindowOnScreenBottom: Boolean
         get() = isInWindowedMode && currentBounds.centerY > maximumBounds.centerY
+
+    val needsLegacyWindowDetection: Boolean
+        get() = !isInWindowedMode && !hasReliableWindowMetrics
 }
 
 internal fun calculateWindowState(
@@ -95,7 +101,10 @@ internal fun calculateWindowState(
     isPlatformMultiWindow: Boolean,
     isPictureInPicture: Boolean,
     isLaunchedFromBubble: Boolean,
-    isLegacyMultiWindow: Boolean
+    isLegacyMultiWindow: Boolean,
+    hasReliableWindowMetrics: Boolean = false,
+    navigationBarInsets: WindowInsetsPx? = null,
+    statusBarInsets: WindowInsetsPx? = null
 ): WindowState {
     val maximum = maximumBounds.takeUnless { it.isEmpty }
         ?: physicalDisplayBounds.takeUnless { it.isEmpty }
@@ -110,8 +119,17 @@ internal fun calculateWindowState(
         isPlatformMultiWindow = isPlatformMultiWindow,
         isPictureInPicture = isPictureInPicture,
         isLaunchedFromBubble = isLaunchedFromBubble,
-        isLegacyMultiWindow = isLegacyMultiWindow
+        isLegacyMultiWindow = isLegacyMultiWindow,
+        hasReliableWindowMetrics = hasReliableWindowMetrics,
+        navigationBarInsets = navigationBarInsets,
+        statusBarInsets = statusBarInsets
     )
+}
+
+internal fun canLockWindowOrientation(state: WindowState, sdk: Int, smallestScreenWidthDp: Int): Boolean {
+    // A presentation hint must not depend on orientation locks being honored on large screens.
+    return !state.isInWindowedMode && state.orientation != WindowOrientation.SQUARE &&
+            !(sdk >= 36 && smallestScreenWidthDp >= 600)
 }
 
 internal fun resolveDialogWidthPx(

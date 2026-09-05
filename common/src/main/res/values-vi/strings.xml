@@ -10,4 +10,5 @@
     <string name="biometriccompat_global_action_settings">Cài đặt</string>
     <string name="biometriccompat_turn_on_settings_action">Bật trong Cài đặt</string>
     <string name="biometriccompat_error_message_change_not_allowed">Quản trị viên của bạn không cho phép thay đổi này</string>
+    <string name="biometriccompat_permissions_settings_message">Để tiếp tục, hãy cấp các quyền sau trong phần cài đặt ứng dụng:\n%1$s</string>
 </resources>

@@ -236,7 +236,7 @@ class BiometricPromptCompatDialogImpl(
                 if (hasFocus) {
                     startAuth()
                 } else {
-                    if (isMultiWindowHack) {
+                    if (keepAuthWhileWindowVisible) {
                         if (isInScreen && isInScreenUIHackNeeded) {
                             e("BiometricPromptGenericImpl.onWindowFocusChanged - do not cancelAuth - inScreenDevice and app on top")
                             return
@@ -283,16 +283,9 @@ class BiometricPromptCompatDialogImpl(
             .isWindowOnScreenBottom()
 
     //in case app switched to the SplitScreen mode we need to skip onPause on lost focus cases
-    private val isMultiWindowHack: Boolean
-        get() = if (compatBuilder.getMultiWindowSupport().isInMultiWindow && inProgress.get() && dialog.isShowing) {
-            e("BiometricPromptGenericImpl.isMultiWindowHack - perform hack")
-            authCallback?.stopAuth()
-            authCallback?.startAuth()
-            true
-        } else {
-            e("BiometricPromptGenericImpl.isMultiWindowHack - do not perform hack")
-            false
-        }
+    private val keepAuthWhileWindowVisible: Boolean
+        get() = compatBuilder.getMultiWindowSupport().isInMultiWindow &&
+                inProgress.get() && dialog.isShowing
 
     private fun checkInScreenVisibility() {
         if (isInScreen) {
@@ -327,10 +320,8 @@ class BiometricPromptCompatDialogImpl(
             ) != null
         )
             return
-        dialog.show(
-            compatBuilder.getActivity()?.supportFragmentManager ?: return,
-            BiometricPromptCompatDialog.TAG
-        )
+        val manager = compatBuilder.getActivity()?.supportFragmentManager ?: return
+        dialog.show(manager, BiometricPromptCompatDialog.TAG)
     }
 
     val authPreview: SurfaceView?

@@ -8,11 +8,11 @@ internal class AppFlowSecretStore(
     private val write: (String, String) -> Boolean
 ) {
     @Synchronized
-    fun getSecret(keyName: String, create: Boolean): CharArray {
+    fun getSecret(keyName: String, create: Boolean, allowLegacy: Boolean = true): CharArray {
         read(keyName)?.let { return it.toCharArray() }
         if (!create) {
-            // Compatibility path for ciphertext created before protected random secrets existed.
-            // A later encryption for this key stores a random secret and leaves this path behind.
+            check(allowLegacy) { "Protected app-flow key is missing" }
+            // Only unversioned historical ciphertext may use the public-name-derived key.
             return keyName.toCharArray().reversedArray()
         }
         val random = ByteArray(32).also { SecureRandom().nextBytes(it) }

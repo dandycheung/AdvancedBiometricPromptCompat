@@ -4,6 +4,7 @@
     <string name="biometriccompat_allow_notifications_channel_perm">Дозволити показ каналів сповіщень</string>
     <string name="biometriccompat_allow_notifications_perm">Дозволити показ сповіщень</string>
     <string name="biometriccompat_permissions_request_failed">Дію не можна виконати, оскільки не надано потрібний дозвіл.</string>
+    <string name="biometriccompat_permissions_settings_message">Щоб продовжити, надайте потрібні дозволи в налаштуваннях застосунку:\n%1$s</string>
     <string name="biometriccompat_camera_permission_required">Для використання цієї функції потрібен дозвіл на камеру.</string>
     <string name="biometriccompat_request_perm">%1$s потрібен такий дозвіл:\n%2$s</string>
     <string name="biometriccompat_grant_permissions_header_text">Запит доступу</string>

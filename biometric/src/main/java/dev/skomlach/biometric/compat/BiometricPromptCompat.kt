@@ -145,7 +145,26 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
         @JvmStatic
         fun getAvailableAuthRequests(): List<BiometricAuthRequest> {
-            return availableAuthRequests.toList().sortedBy {
+            if (!API_ENABLED) return emptyList()
+            return availableAuthRequests.toList().filter { request ->
+                if (request.type == BiometricType.BIOMETRIC_ANY) return@filter true
+                val hardware = LegacyBiometric.getSelectedBiometricModule(
+                    request.type, BiometricProviderType.HARDWARE, enroll = true
+                )
+                val fallback = LegacyBiometric.getSelectedBiometricModule(
+                    request.type, request.provider, enroll = true
+                )
+                val systemHardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                    BiometricManagerCompat.getAuthSnapshot(request.withApi(BiometricApi.BIOMETRIC_API)
+                        .withProvider(BiometricProviderType.HARDWARE)).state.hardwareDetected
+                val preferSystemFace = request.type == BiometricType.BIOMETRIC_FACE &&
+                    deviceInfo?.model?.let { isSamsungDeviceModel(it) ||
+                        BiometricPromptHardware.PixelModelChecker.isPixel8OrNewer(it) } == true
+                isAuthRequestRouteSupported(
+                    request, systemHardware, hardware != null, fallback != null,
+                    preferSystemFace, (fallback?.priority ?: Int.MIN_VALUE) > BiometricModule.PRIORITY_SYSTEM_HARDWARE
+                )
+            }.sortedBy {
                 it.toString()
             }
         }
@@ -333,6 +352,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
     private var activeCompletion: AuthFlowCompletion? = null
     private var activeAuthCallback: AuthenticationCallback? = null
     private var implementationStarted = false
+    private var awaitingSystemEnrollment = false
 
 
     fun setupBiometric(
@@ -356,6 +376,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         authCanceled.set(false)
         // Configure mutable builder state only after this call owns the shared flow gate.
         builder.enroll = true
+        awaitingSystemEnrollment = enrollNewHardwareBiometric
         builder.resetEnrollSessionState()
         builder.beginAuthFlow(authFlowId)
         activeAuthCallback = callback
@@ -389,6 +410,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 return@softwareSetup
             }
             builder.invalidateSelectedRoutes()
+            awaitingSystemEnrollment = false
             if (enrollNewHardwareBiometric) {
                 val newlyEnrolledHardwareTypes = builder.getEnrolledHardwareScopeTypes()
                     .subtract(enrolledHardwareBeforeSystemSetup)
@@ -510,6 +532,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         ownedAuthFlowGeneration.set(authFlowId)
         authCanceled.set(false)
         builder.enroll = false
+        awaitingSystemEnrollment = false
         builder.beginAuthFlow(authFlowId)
         activeAuthCallback = callback
         activeCompletion = null
@@ -842,6 +865,14 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 )
             } else {
                 BiometricLoggerImpl.d("BiometricPromptCompat.startAuth")
+                builder.systemPromptOwnsUi = when (val implementation = impl) {
+                    is BiometricPromptApi28Impl -> !DevicesWithKnownBugs.hasExplicitMissingBiometricUiBug
+                    is BiometricPromptGenericImpl -> {
+                        implementation.prepareUiSession()
+                        implementation.systemPromptOwnsUi
+                    }
+                    else -> false
+                }
                 val activityViewWatcher = try {
                     if (!builder.isSilentAuthEnabled()) ActivityViewWatcher(
                         builder,
@@ -1130,6 +1161,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         callback: AuthenticationCallback,
         authFlowId: Long
     ): Boolean {
+        if (builder.enroll && awaitingSystemEnrollment) return false
         if (if (builder.enroll) builder.getPendingEnrollTypes().isNotEmpty() else builder.getEffectiveAvailableTypes().isNotEmpty()) {
             return false
         }
@@ -1442,6 +1474,10 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         if (builder.getBiometricAuthRequest().provider == BiometricProviderType.SOFTWARE) {
             return false
         }
+
+        if (builder.enroll && builder.hasSoftwareEnrollTargets() &&
+            builder.getPrimaryAvailableTypes().any { builder.selectedRoute(it)?.usesBiometricPromptHardware == true }
+        ) return true
 
         if (isHigherPrioritySoftwareSelectedThanBiometricPrompt()) {
             return false
@@ -1977,10 +2013,26 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         private var negativeButtonText: CharSequence? = null
 
         private lateinit var multiWindowSupport: MultiWindowSupport
+        private var inBubbleTask = false
 
         private var notificationEnabled = false
 
         private var backgroundBiometricIconsEnabled = true
+        internal var systemPromptOwnsUi = false
+        internal var frameworkFingerprintUiOwner = AuthenticationUiOwner.UNKNOWN
+
+        /**
+         * Presentation override for a framework FingerprintManager stage only.
+         * Set SYSTEM only after verifying that this runtime/backend supplies a complete prompt.
+         * UNKNOWN keeps automatic compatibility behavior; it does not probe by window focus.
+         * Mixed requests run a system-owned fingerprint stage before remaining compat routes.
+         * Software and known missing-system-UI exceptions retain compat UI.
+         * This setting never changes authentication routing or accepted sensor/crypto results.
+         */
+        fun setFrameworkFingerprintUiOwner(owner: AuthenticationUiOwner): Builder {
+            frameworkFingerprintUiOwner = owner
+            return this
+        }
 
         private var biometricCryptographyPurpose: BiometricCryptographyPurpose? = null
         private var cryptoFallbackAllowed: Boolean = false
@@ -2072,7 +2124,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 }
             }
             if (API_ENABLED) {
-                multiWindowSupport = MultiWindowSupport.get()
+                multiWindowSupport = activity?.let { MultiWindowSupport.get(it) } ?: MultiWindowSupport.get()
             }
         }
 
@@ -2284,6 +2336,10 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 getAllAvailableTypes()
             } else {
                 val effectiveTypes = getEffectiveAvailableTypes()
+                val softwareTypes = effectiveTypes.filterTo(LinkedHashSet()) {
+                    selectedRoute(it)?.provider == BiometricProviderType.SOFTWARE
+                }
+                if (softwareTypes.isNotEmpty()) return softwareTypes
                 if (effectiveTypes.isNotEmpty()) {
                     effectiveTypes
                 } else {
@@ -2293,6 +2349,9 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 }
             }
         }
+
+        internal fun hasSoftwareEnrollTargets(): Boolean = enroll &&
+                getPendingEnrollTypes().any { selectedRoute(it)?.provider == BiometricProviderType.SOFTWARE }
 
         internal fun getPreSatisfiedEnrollResults(): Set<AuthenticationResult> {
             if (!enroll) {
@@ -2480,6 +2539,9 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                 val biometricPromptRoute = biometricPromptRoute(type)
                 val legacyHardwareRoute = legacyHardwareRoute(type)
                 val fallbackRoute = fallbackRoute(type)
+                if (biometricAuthRequest.api == BiometricApi.AUTO &&
+                    biometricAuthRequest.type != BiometricType.BIOMETRIC_ANY && legacyHardwareRoute != null
+                ) return@getOrPut legacyHardwareRoute
                 pickSelectedBiometricRoute(
                     requestApi = biometricAuthRequest.api,
                     preferSystemFaceHardware = shouldPreferSystemHardwareFace(type),
@@ -2627,7 +2689,13 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         }
 
         fun getMultiWindowSupport(): MultiWindowSupport {
-            return multiWindowSupport
+            return getActivity()?.let { MultiWindowSupport.get(it, inBubbleTask) } ?: multiWindowSupport
+        }
+
+        /** Presentation hint for child Activities in an app-managed Bubble task. */
+        fun setInBubbleTask(value: Boolean): Builder {
+            inBubbleTask = value
+            return this
         }
 
         fun setCryptographyPurpose(

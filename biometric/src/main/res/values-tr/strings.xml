@@ -117,6 +117,7 @@
     <string name="biometriccompat_screen_lock_prompt_message">Devam etmek için ekran kilidinizi girin</string>
     <string name="biometriccompat_fingerprint_error_lockout">Çok fazla deneme. Lütfen daha sonra tekrar deneyin.</string>
     <string name="biometriccompat_fingerprint_not_recognized">Tanınmadı</string>
+    <string name="biometriccompat_modality_unverifiable">Bu sistem API’si istenen biyometrik sensörü doğrulayamıyor. Herhangi bir biyometrik yöntem veya desteklenen sensöre özel bir API seçin.</string>
 </resources>
 
 

@@ -10,4 +10,5 @@
     <string name="biometriccompat_global_action_settings">Ayarlar</string>
     <string name="biometriccompat_turn_on_settings_action">Ayarlarda aç</string>
     <string name="biometriccompat_error_message_change_not_allowed">Bu değişikliğe yöneticiniz izin vermiyor</string>
+    <string name="biometriccompat_permissions_settings_message">Devam etmek için uygulama ayarlarında şu izinleri verin:\n%1$s</string>
 </resources>

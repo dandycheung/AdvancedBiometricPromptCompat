@@ -42,4 +42,9 @@
     <string name="biometriccompat_tf_face_help_model_error_generic">Không thể dùng camera khuôn mặt</string>
     <string name="biometriccompat_tf_face_prompt_start_auth">Căn khuôn mặt của bạn với camera</string>
     <string name="biometriccompat_tf_face_prompt_start_enroll">Căn khuôn mặt để thiết lập mở khóa khuôn mặt</string>
+    <string name="biometriccompat_tf_face_help_untrusted_capture">Cần hình ảnh được chụp từ camera đáng tin cậy</string>
+    <string name="biometriccompat_tf_face_challenge_instruction">Để xác minh bạn đang hiện diện thực tế, %1$s</string>
+    <string name="biometriccompat_tf_face_challenge_center">nhìn thẳng về phía trước</string>
+    <string name="biometriccompat_tf_face_challenge_left">quay đầu nhẹ sang trái</string>
+    <string name="biometriccompat_tf_face_challenge_right">quay đầu nhẹ sang phải</string>
 </resources>

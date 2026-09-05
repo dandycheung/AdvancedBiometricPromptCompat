@@ -128,11 +128,23 @@ object Core {
         listener: AuthenticationListener?,
         restartPredicate: RestartPredicate? = RestartPredicatesImpl.defaultPredicate(),
         allowCryptoFallback: Boolean = false
+    ) = authenticateSelected(purpose, listener, restartPredicate, allowCryptoFallback)
+
+    internal fun authenticateSelected(
+        purpose: BiometricCryptographyPurpose?,
+        listener: AuthenticationListener?,
+        restartPredicate: RestartPredicate? = RestartPredicatesImpl.defaultPredicate(),
+        allowCryptoFallback: Boolean = false,
+        moduleTags: Set<Int>? = null,
+        isActive: () -> Boolean = { true }
     ) {
         var m: BiometricModule? = null
         try {
 
-            for (module in reprintModuleHashMap.values) {
+            val modules = synchronized(reprintModuleHashMap) { reprintModuleHashMap.values.toList() }
+            for (module in modules) {
+                if (!isActive()) return
+                if (moduleTags != null && module.tag() !in moduleTags) continue
                 m = module
 
                 var biometricCryptoObject: BiometricCryptoObject? = null

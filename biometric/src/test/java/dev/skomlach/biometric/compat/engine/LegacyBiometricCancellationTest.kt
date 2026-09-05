@@ -15,9 +15,62 @@ import dev.skomlach.biometric.compat.utils.logging.BiometricLoggerImpl
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LegacyBiometricCancellationTest {
+
+    @Test
+    fun `late routes join live core modules without restart and all signals cancel`() {
+        val modules = moduleMap()
+        val original = synchronized(modules) { modules.toMap() }
+        val logging = BiometricLoggerImpl.DEBUG
+        val finger = RecordingModule(BiometricMethod.FINGERPRINT_API23.id)
+        val face = RecordingModule(BiometricMethod.FACE_MIUI.id)
+        val iris = RecordingModule(BiometricMethod.IRIS_SAMSUNG.id)
+        val owner = Any()
+        fun join(type: BiometricType) = LegacyBiometric.authenticateInSession(
+            owner, null, null, listOf(type), NoOpLegacyListener, null,
+            BiometricProviderType.COMBINED, emptySet(), false
+        )
+        try {
+            BiometricLoggerImpl.DEBUG = false
+            LegacyBiometric.cancelAuthentication()
+            Core.cleanModules()
+            synchronized(modules) {
+                modules.clear()
+                modules[BiometricMethod.FINGERPRINT_API23] = finger
+                modules[BiometricMethod.FACE_MIUI] = face
+                modules[BiometricMethod.IRIS_SAMSUNG] = iris
+            }
+            join(BiometricType.BIOMETRIC_FINGERPRINT)
+            assertEquals(1, finger.starts)
+            val originalSignal = finger.signal!!
+            join(BiometricType.BIOMETRIC_FACE)
+            assertEquals(1, finger.starts)
+            assertFalse(originalSignal.isCanceled)
+            assertEquals(1, face.starts)
+            // An ALL request can continue after one module succeeds and releases the old gate.
+            finger.listener!!.onSuccess(finger.tag(), null)
+            join(BiometricType.BIOMETRIC_IRIS)
+            join(BiometricType.BIOMETRIC_FACE)
+            assertEquals(1, iris.starts)
+            assertEquals(1, face.starts)
+            assertFalse(face.signal!!.isCanceled)
+            LegacyBiometric.cancelAuthentication()
+            assertTrue(originalSignal.isCanceled)
+            assertTrue(face.signal!!.isCanceled)
+            assertTrue(iris.signal!!.isCanceled)
+        } finally {
+            LegacyBiometric.cancelAuthentication()
+            Core.cleanModules()
+            synchronized(modules) {
+                modules.clear()
+                modules.putAll(original)
+            }
+            BiometricLoggerImpl.DEBUG = logging
+        }
+    }
 
     @Test
     fun `a module cancellation releases legacy authentication for the next route`() {
@@ -128,6 +181,8 @@ class LegacyBiometricCancellationTest {
 
     private class RecordingModule(private val id: Int) : BiometricModule {
         var signal: CancellationSignal? = null
+        var starts = 0
+        var listener: AuthenticationListener? = null
         override val isManagerAccessible = true
         override val isHardwarePresent = true
         override val isLockOut = false
@@ -137,6 +192,8 @@ class LegacyBiometricCancellationTest {
         override val isBiometricEnrollChanged = false
         override fun tag() = id
         override fun authenticate(biometricCryptoObject: BiometricCryptoObject?, cancellationSignal: CancellationSignal?, listener: AuthenticationListener?, restartPredicate: RestartPredicate?) {
+            starts++
+            this.listener = listener
             signal = cancellationSignal
         }
     }

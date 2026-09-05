@@ -105,17 +105,21 @@ object BiometricCryptoObjectHelper {
 
     private fun prepareCryptoAccess(name: String, isUserAuthRequired: Boolean, purpose: BiometricCryptographyPurpose) {
         if (!isUserAuthRequired) {
-            prepareAppFlowCrypto(name, purpose.purpose == BiometricCryptographyPurpose.ENCRYPT)
+            prepareAppFlowCrypto(name, purpose)
         } else {
             AppFlowCryptoFacade.registerKeyForBiometric(name)
         }
     }
 
-    private fun prepareAppFlowCrypto(name: String, create: Boolean) {
-        val secret = AppFlowCryptoStorage.getProtectedSecret(name, create)
+    private fun prepareAppFlowCrypto(name: String, purpose: BiometricCryptographyPurpose) {
+        val create = purpose.purpose == BiometricCryptographyPurpose.ENCRYPT
+        val allowLegacy = !create && AppFlowCipherFactory.isLegacyIv(
+            requireNotNull(purpose.initVector) { "Initialization vector is required for decryption" }
+        )
+        val secret = AppFlowCryptoStorage.getProtectedSecret(name, create, allowLegacy)
         try {
             AppFlowCryptoFacade.registerKeyForAppFlow(name)
-            AppFlowCryptoFacade.unlockWithAppSecret(name, secret)
+            AppFlowSessionStore.unlock(name, secret, allowLegacy)
         } finally {
             secret.fill('\u0000')
         }
