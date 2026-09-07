@@ -23,9 +23,9 @@ import dev.skomlach.biometric.compat.engine.internal.face.tensorflow.ImageUtils
 import dev.skomlach.biometric.compat.utils.SensorPrivacyCheck
 import dev.skomlach.biometric.custom.face.tf.R
 import dev.skomlach.common.logging.LogCat
+import dev.skomlach.common.misc.ExecutorHelper
 import dev.skomlach.common.permissions.PermissionUtils
 import dev.skomlach.common.translate.LocalizationHelper
-import java.util.concurrent.atomic.AtomicBoolean
 
 class RealCameraProvider(private val context: Context) : IFrameProvider,
     ImageReader.OnImageAvailableListener {
@@ -44,21 +44,23 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var cameraDevice: CameraDevice? = null
     private var imageReader: ImageReader? = null
+    private var imageLifetime: FrameResourceLifetime? = null
     private var captureSession: CameraCaptureSession? = null
     private var sensorOrientation: Int = 0
     private var backgroundThread: HandlerThread? = null
 
-    private val isConverting = AtomicBoolean(false)
     private var yData = ByteArray(0)
     private var uData = ByteArray(0)
     private var vData = ByteArray(0)
     private var argbPixels = IntArray(0)
 
+    @Synchronized
     override fun start(
         faceDetector: FaceDetector,
         frameListener: (bitmap: Bitmap, faces: List<Face>) -> Unit,
         errorListener: (code: Int, message: String) -> Unit
     ) {
+        if (backgroundThread != null) stop()
         if (backgroundThread == null) {
             backgroundThread = HandlerThread("TensorFlowFaceCameraProvider").apply {
                 start()
@@ -71,7 +73,10 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
         startCamera()
     }
 
+    @Synchronized
     override fun stop() {
+        val lifetime = imageLifetime
+        imageLifetime = null
         try {
             imageReader?.setOnImageAvailableListener(null, null)
             try {
@@ -84,8 +89,6 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
             captureSession = null
             cameraDevice?.close()
             cameraDevice = null
-            imageReader?.close()
-            imageReader = null
             backgroundHandler?.removeCallbacksAndMessages(null)
             backgroundHandler = null
             backgroundThread?.quitSafely()
@@ -93,7 +96,13 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
         } catch (e: Exception) {
             LogCat.logException(e)
         } finally {
-            isConverting.set(false)
+            imageReader = null
+            onFrame = null
+            onError = null
+            mlKitDetector = null
+            // A detector task may still be reading the native image. Its completion
+            // closes the image first, then releases this retired reader.
+            lifetime?.close()
             SensorPrivacyCheck.notifySelfCameraClosed()
         }
     }
@@ -175,36 +184,53 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
                 ImageFormat.YUV_420_888,
                 2
             )
+            val sessionReader = imageReader ?: return
+            imageLifetime = FrameResourceLifetime { sessionReader.close() }
             imageReader?.setOnImageAvailableListener(this, backgroundHandler)
 
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
-                    SensorPrivacyCheck.notifySelfCameraOpened()
-                    cameraDevice = camera
-                    createCaptureSession()
+                    synchronized(this@RealCameraProvider) {
+                        if (imageReader !== sessionReader) {
+                            camera.close()
+                            return
+                        }
+                        SensorPrivacyCheck.notifySelfCameraOpened()
+                        cameraDevice = camera
+                        createCaptureSession()
+                    }
                 }
 
                 override fun onClosed(camera: CameraDevice) {
-                    SensorPrivacyCheck.notifySelfCameraClosed()
+                    synchronized(this@RealCameraProvider) {
+                        if (imageReader === sessionReader) {
+                            SensorPrivacyCheck.notifySelfCameraClosed()
+                        }
+                    }
                     super.onClosed(camera)
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
-                    cameraDevice = null
+                    synchronized(this@RealCameraProvider) {
+                        camera.close()
+                        if (cameraDevice === camera) cameraDevice = null
+                    }
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
-                    camera.close()
-                    cameraDevice = null
-                    onError?.invoke(
-                        AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_UNABLE_TO_PROCESS,
-                        LocalizationHelper.getLocalizedString(
-                            context,
-                            R.string.biometriccompat_tf_face_help_camera_error,
-                            error
+                    synchronized(this@RealCameraProvider) {
+                        camera.close()
+                        if (cameraDevice === camera) cameraDevice = null
+                        if (imageReader !== sessionReader) return
+                        onError?.invoke(
+                            AbstractSoftwareBiometricManager.CUSTOM_BIOMETRIC_ERROR_UNABLE_TO_PROCESS,
+                            LocalizationHelper.getLocalizedString(
+                                context,
+                                R.string.biometriccompat_tf_face_help_camera_error,
+                                error
+                            )
                         )
-                    )
+                    }
                 }
             }, backgroundHandler)
 
@@ -222,7 +248,8 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
 
     private fun createCaptureSession() {
         try {
-            val surface = imageReader?.surface ?: return
+            val sessionReader = imageReader ?: return
+            val surface = sessionReader.surface
             val requestBuilder =
                 cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)?.apply {
                     addTarget(surface)
@@ -232,15 +259,21 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
                 listOf(surface),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
-                        captureSession = session
-                        try {
-                            session.setRepeatingRequest(
-                                requestBuilder.build(),
-                                null,
-                                backgroundHandler
-                            )
-                        } catch (e: Exception) {
-                            LogCat.logException(e)
+                        synchronized(this@RealCameraProvider) {
+                            if (imageReader !== sessionReader) {
+                                session.close()
+                                return
+                            }
+                            captureSession = session
+                            try {
+                                session.setRepeatingRequest(
+                                    requestBuilder.build(),
+                                    null,
+                                    backgroundHandler
+                                )
+                            } catch (e: Exception) {
+                                LogCat.logException(e)
+                            }
                         }
                     }
 
@@ -253,104 +286,97 @@ class RealCameraProvider(private val context: Context) : IFrameProvider,
         }
     }
 
+    @Synchronized
     override fun onImageAvailable(reader: ImageReader?) {
-
-        if (isConverting.get() || backgroundHandler == null) {
-            try {
-                reader?.acquireLatestImage()?.close()
-            } catch (_: Exception) {
-            }
-            return
-        }
-
-        val image = reader?.acquireLatestImage() ?: return
-        isConverting.set(true)
-
-        try {
-            val inputImage = InputImage.fromMediaImage(image, sensorOrientation)
-
-
-            mlKitDetector?.process(inputImage)
-                ?.addOnSuccessListener { faces ->
-                    if (faces.isNotEmpty()) {
-                        processImageToBitmap(image, faces)
-                    } else {
-                        image.close()
-                        isConverting.set(false)
-                    }
-                }
-                ?.addOnFailureListener {
-                    LogCat.logException(it)
-                    image.close()
-                    isConverting.set(false)
-                }
+        if (reader == null || reader !== imageReader) return
+        val lifetime = imageLifetime ?: return
+        val detector = mlKitDetector ?: return
+        val image = try {
+            lifetime.acquireFrame { reader.acquireLatestImage() }
         } catch (e: Exception) {
             LogCat.logException(e)
-            image.close()
-            isConverting.set(false)
+            null
+        } ?: return
+
+        val task = try {
+            detector.process(InputImage.fromMediaImage(image, sensorOrientation))
+        } catch (e: Exception) {
+            lifetime.completeFrame { image.close() }
+            LogCat.logException(e)
+            return
+        }
+        // This executor outlives the camera HandlerThread, so stop() cannot discard
+        // the completion callback and leak an acquired image/reader.
+        task.addOnCompleteListener(ExecutorHelper.backgroundExecutor) { result ->
+            try {
+                synchronized(this) {
+                    if (reader !== imageReader || !lifetime.isOpen()) return@synchronized
+                    if (result.isSuccessful) {
+                        val faces = result.result
+                        if (faces.isNotEmpty()) processImageToBitmap(image, faces)
+                    } else {
+                        result.exception?.let { LogCat.logException(it) }
+                    }
+                }
+            } catch (e: Exception) {
+                LogCat.logException(e)
+            } finally {
+                lifetime.completeFrame { image.close() }
+            }
         }
     }
 
     private fun processImageToBitmap(image: android.media.Image, faces: List<Face>) {
-        backgroundHandler?.post {
-            try {
-                val width = image.width
-                val height = image.height
-                val planes = image.planes
-                val yBuffer = planes[0].buffer
-                val uBuffer = planes[1].buffer
-                val vBuffer = planes[2].buffer
+        try {
+            val width = image.width
+            val height = image.height
+            val planes = image.planes
+            val yBuffer = planes[0].buffer
+            val uBuffer = planes[1].buffer
+            val vBuffer = planes[2].buffer
 
 
-                if (yData.size != yBuffer.remaining()) yData = ByteArray(yBuffer.remaining())
-                if (uData.size != uBuffer.remaining()) uData = ByteArray(uBuffer.remaining())
-                if (vData.size != vBuffer.remaining()) vData = ByteArray(vBuffer.remaining())
-                yBuffer.get(yData)
-                uBuffer.get(uData)
-                vBuffer.get(vData)
+            if (yData.size != yBuffer.remaining()) yData = ByteArray(yBuffer.remaining())
+            if (uData.size != uBuffer.remaining()) uData = ByteArray(uBuffer.remaining())
+            if (vData.size != vBuffer.remaining()) vData = ByteArray(vBuffer.remaining())
+            yBuffer.get(yData)
+            uBuffer.get(uData)
+            vBuffer.get(vData)
 
-                val yRowStride = planes[0].rowStride
-                val uvRowStride = planes[1].rowStride
-                val uvPixelStride = planes[1].pixelStride
-                image.close()
-                if (argbPixels.size != width * height) argbPixels = IntArray(width * height)
-                ImageUtils.convertYUV420ToARGB8888(
-                    yData, uData, vData,
-                    width, height,
-                    yRowStride, uvRowStride, uvPixelStride,
-                    argbPixels
-                )
+            val yRowStride = planes[0].rowStride
+            val uvRowStride = planes[1].rowStride
+            val uvPixelStride = planes[1].pixelStride
+            if (argbPixels.size != width * height) argbPixels = IntArray(width * height)
+            ImageUtils.convertYUV420ToARGB8888(
+                yData, uData, vData,
+                width, height,
+                yRowStride, uvRowStride, uvPixelStride,
+                argbPixels
+            )
 
-                val unrotatedBitmap =
-                    Bitmap.createBitmap(argbPixels, width, height, Bitmap.Config.ARGB_8888)
-                val matrix = Matrix().apply { postRotate(sensorOrientation.toFloat()) }
-                val finalBitmap =
-                    Bitmap.createBitmap(unrotatedBitmap, 0, 0, width, height, matrix, true)
-                if (finalBitmap !== unrotatedBitmap) {
-                    unrotatedBitmap.recycle()
-                }
-
-                val frameListener = onFrame
-                if (frameListener == null) {
-                    finalBitmap.recycle()
-                } else {
-                    try {
-                        frameListener.invoke(finalBitmap, faces)
-                    } catch (error: Throwable) {
-                        if (!finalBitmap.isRecycled) finalBitmap.recycle()
-                        throw error
-                    }
-                }
-
-            } catch (e: Exception) {
-                LogCat.logException(e)
-            } finally {
-                try {
-                    image.close()
-                } catch (_: Exception) {
-                }
-                isConverting.set(false)
+            val unrotatedBitmap =
+                Bitmap.createBitmap(argbPixels, width, height, Bitmap.Config.ARGB_8888)
+            val matrix = Matrix().apply { postRotate(sensorOrientation.toFloat()) }
+            val finalBitmap =
+                Bitmap.createBitmap(unrotatedBitmap, 0, 0, width, height, matrix, true)
+            if (finalBitmap !== unrotatedBitmap) {
+                unrotatedBitmap.recycle()
             }
+
+            val frameListener = onFrame
+            if (frameListener == null) {
+                finalBitmap.recycle()
+            } else {
+                try {
+                    frameListener.invoke(finalBitmap, faces)
+                } catch (error: Throwable) {
+                    if (!finalBitmap.isRecycled) finalBitmap.recycle()
+                    throw error
+                }
+            }
+
+        } catch (e: Exception) {
+            LogCat.logException(e)
         }
     }
 
