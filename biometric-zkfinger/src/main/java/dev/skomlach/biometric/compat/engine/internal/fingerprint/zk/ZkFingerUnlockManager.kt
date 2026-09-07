@@ -69,6 +69,12 @@ class ZkFingerUnlockManager(
         @Volatile
         private var config: ZkFingerConfig = ZkFingerConfig()
 
+        // ZKFingerService owns process-wide native state. All managers must open,
+        // process and free it on the same worker, including cancellation cleanup.
+        private val nativeHandler by lazy {
+            Handler(HandlerThread("ZkFingerBackground").apply { start() }.looper)
+        }
+
         private val activeSessionLock = Any()
 
         @Volatile
@@ -87,7 +93,7 @@ class ZkFingerUnlockManager(
         private fun requestActiveSession(newManager: ZkFingerUnlockManager) {
             synchronized(activeSessionLock) {
                 val previous = currentActiveManager?.get()
-                if (previous != null && previous != newManager) {
+                if (previous != null) {
                     previous.cancelInternal()
                 }
                 currentActiveManager = WeakReference(newManager)
@@ -104,17 +110,24 @@ class ZkFingerUnlockManager(
     }
 
     private val effectiveConfig: ZkFingerConfig
-        get() = config
+        get() = sessionConfig ?: config
 
     private val prefs by lazy {
         getProtectedPreferences(STORAGE_NAME)
     }
 
-    private var backgroundThread: HandlerThread? = null
-    private var backgroundHandler: Handler? = null
+    @Volatile
+    private var sessionConfig: ZkFingerConfig? = null
+    private var captureSession = newCaptureSession()
+    private var pendingUsbPermission: AtomicBoolean? = null
+
+    private fun newCaptureSession() = ZkFingerCaptureSession { action ->
+        nativeHandler.post { action() }
+    }
     private var callbackHandler: Handler = Handler(Looper.getMainLooper())
     private var authCallback: AuthenticationCallback? = null
     private var cancellationSignal: CancellationSignal? = null
+    @Volatile
     private var fingerprintSensor: FingerprintSensor? = null
     private var usbReceiver: BroadcastReceiver? = null
     private var isEnrolling = false
@@ -147,6 +160,21 @@ class ZkFingerUnlockManager(
     override fun prepareForAuthentication(
         callback: PreparationCallback
     ) {
+        val mainHandler = Handler(Looper.getMainLooper())
+        val delivery = object : PreparationCallback() {
+            override fun onPrepared() {
+                mainHandler.post { callback.onPrepared() }
+            }
+
+            override fun onPreparationError(errMsgId: Int, errString: CharSequence?) {
+                mainHandler.post { callback.onPreparationError(errMsgId, errString) }
+            }
+        }
+        nativeHandler.post { prepareOnWorker(delivery) }
+    }
+
+    private fun prepareOnWorker(callback: PreparationCallback) {
+        clearPendingUsbPermission()
         try {
             val device = findSupportedDevice()
             if (device == null) {
@@ -206,10 +234,10 @@ class ZkFingerUnlockManager(
         val tag = extra?.getString(ENROLLMENT_TAG_KEY)
         if (tag.isNullOrBlank()) {
             getEnrolls().forEach { removeTemplate(it) }
-            runCatching { ZKFingerService.clear() }
+            nativeHandler.post { runCatching { ZKFingerService.clear() } }
         } else {
             removeTemplate(tag)
-            runCatching { ZKFingerService.del(tag) }
+            nativeHandler.post { runCatching { ZKFingerService.del(tag) } }
         }
     }
 
@@ -236,7 +264,21 @@ class ZkFingerUnlockManager(
         handler: Handler?,
         extra: Bundle?
     ) {
+        val extras = extra?.let(::Bundle)
+        nativeHandler.post { authenticateOnWorker(cancel, callback, handler, extras) }
+    }
+
+    private fun authenticateOnWorker(
+        cancel: CancellationSignal?,
+        callback: AuthenticationCallback?,
+        handler: Handler?,
+        extra: Bundle?
+    ) {
         requestActiveSession(this)
+        clearPendingUsbPermission()
+        captureSession.invalidate()
+        captureSession = newCaptureSession()
+        sessionConfig = config
         callbackHandler = handler ?: Handler(Looper.getMainLooper())
         authCallback = callback
         cancellationSignal = cancel
@@ -245,6 +287,7 @@ class ZkFingerUnlockManager(
             onAuthenticationError(lockoutError, lockoutMessage(lockoutError))
             authCallback = null
             cancellationSignal = null
+            sessionConfig = null
             releaseSession(this)
             return
         }
@@ -260,6 +303,7 @@ class ZkFingerUnlockManager(
             )
             authCallback = null
             cancellationSignal = null
+            sessionConfig = null
             releaseSession(this)
             return
         }
@@ -271,25 +315,26 @@ class ZkFingerUnlockManager(
             )
             authCallback = null
             cancellationSignal = null
+            sessionConfig = null
             releaseSession(this)
             return
         }
 
         isSessionActive.set(true)
+        val session = captureSession
+        val resultHandler = callbackHandler
         cancellationSignal?.setOnCancelListener {
-            if (isSessionActive.get()) {
-                val callback = authCallback
-                callbackHandler.post {
-                    callback?.onAuthenticationCancelled()
+            if (session.invalidate()) {
+                resultHandler.post { callback?.onAuthenticationCancelled() }
+            }
+            nativeHandler.post {
+                if (captureSession === session && isSessionActive.get()) {
+                    stopAuthentication()
                 }
-                stopAuthentication()
             }
         }
 
-        startBackgroundThread()
-        backgroundHandler?.post {
-            openWhenUsbPermissionReady()
-        }
+        session.post { openWhenUsbPermissionReady() }
     }
 
     private fun openWhenUsbPermissionReady() {
@@ -313,7 +358,7 @@ class ZkFingerUnlockManager(
             requestUsbPermission(
                 device,
                 onGranted = { grantedDevice ->
-                    backgroundHandler?.post { openDevice(grantedDevice) }
+                    captureSession.post { openDevice(grantedDevice) }
                 },
                 onDenied = {
                     onAuthenticationError(
@@ -352,7 +397,8 @@ class ZkFingerUnlockManager(
             onDetached()
             return
         }
-        val completed = AtomicBoolean(false)
+        pendingUsbPermission?.set(true)
+        val completed = AtomicBoolean(false).also { pendingUsbPermission = it }
         val completeGranted = { device: UsbDevice ->
             if (completed.compareAndSet(false, true)) {
                 unregisterUsbReceiver()
@@ -427,17 +473,20 @@ class ZkFingerUnlockManager(
                 ) {
                     return
                 }
-                when (intent.action) {
-                    resolveZkPermissionAction(context.packageName) -> {
-                        if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                            onGranted(device)
-                        } else {
-                            onDenied()
+                val action = intent.action
+                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                nativeHandler.post {
+                    if (usbReceiver !== this) return@post
+                    when (action) {
+                        resolveZkPermissionAction(context.packageName) -> {
+                            if (granted) {
+                                onGranted(device)
+                            } else {
+                                onDenied()
+                            }
                         }
-                    }
 
-                    UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                        onDetached()
+                        UsbManager.ACTION_USB_DEVICE_DETACHED -> onDetached()
                     }
                 }
             }
@@ -458,7 +507,7 @@ class ZkFingerUnlockManager(
         onDenied: () -> Unit,
         onDetached: () -> Unit
     ) {
-        callbackHandler.postDelayed(
+        nativeHandler.postDelayed(
             {
                 if (completed.get()) return@postDelayed
                 val device = findSupportedDevice()
@@ -505,8 +554,8 @@ class ZkFingerUnlockManager(
                 params
             )
             fingerprintSensor = sensor
-            sensor.setFingerprintCaptureListener(effectiveConfig.deviceIndex, captureListener)
-            sensor.SetFingerprintExceptionListener(exceptionListener)
+            sensor.setFingerprintCaptureListener(effectiveConfig.deviceIndex, captureListener(captureSession))
+            sensor.SetFingerprintExceptionListener(exceptionListener(captureSession))
             sensor.open(effectiveConfig.deviceIndex)
             sensor.startCapture(effectiveConfig.deviceIndex)
             postHelp(initialScanMessage())
@@ -520,27 +569,26 @@ class ZkFingerUnlockManager(
         }
     }
 
-    private val captureListener = object : FingerprintCaptureListener {
+    private fun captureListener(session: ZkFingerCaptureSession) = object : FingerprintCaptureListener {
 
         override fun captureOK(image: ByteArray?) = Unit
 
         override fun captureError(e: FingerprintException?) = Unit
 
         override fun extractOK(template: ByteArray?) {
-            if (!isSessionActive.get() || template == null) return
-            backgroundHandler?.post {
-                processTemplate(template.copyOf())
-            }
+            session.postTemplate(template, ::processTemplate)
         }
 
         override fun extractError(errorCode: Int) {
-            LogCat.logError(TAG, "extractError=$errorCode")
-            onAuthenticationFailed()
+            session.post {
+                LogCat.logError(TAG, "extractError=$errorCode")
+                onAuthenticationFailed()
+            }
         }
     }
 
-    private val exceptionListener = FingerprintExceptionListener {
-        if (isSessionActive.get()) {
+    private fun exceptionListener(session: ZkFingerCaptureSession) = FingerprintExceptionListener {
+        session.post {
             onAuthenticationError(
                 CUSTOM_BIOMETRIC_ERROR_HW_UNAVAILABLE,
                 localized(R.string.biometriccompat_zkfinger_help_sensor_unavailable)
@@ -550,7 +598,7 @@ class ZkFingerUnlockManager(
     }
 
     private fun processTemplate(template: ByteArray) {
-        if (!isSessionActive.get()) return
+        if (!isSessionActive.get() || !captureSession.isActive) return
         try {
             if (isEnrolling) {
                 processEnrollmentTemplate(template)
@@ -628,6 +676,7 @@ class ZkFingerUnlockManager(
             return
         }
 
+        if (!captureSession.isActive) return
         saveTemplate(enrollmentTag, merged)
         resetPermanentLockOut()
         onAuthenticationSucceeded()
@@ -720,21 +769,6 @@ class ZkFingerUnlockManager(
         return localized(zkFingerLockoutOutcomeForError(error).messageResId)
     }
 
-    private fun startBackgroundThread() {
-        if (backgroundThread == null) {
-            backgroundThread = HandlerThread("ZkFingerBackground").apply {
-                start()
-                backgroundHandler = Handler(looper)
-            }
-        }
-    }
-
-    private fun stopBackgroundThread() {
-        backgroundHandler = null
-        backgroundThread?.quitSafely()
-        backgroundThread = null
-    }
-
     private fun cancelInternal() {
         if (isSessionActive.get()) {
             onAuthenticationError(
@@ -746,8 +780,9 @@ class ZkFingerUnlockManager(
     }
 
     private fun stopAuthentication() {
+        captureSession.invalidate()
+        clearPendingUsbPermission()
         if (!isSessionActive.compareAndSet(true, false)) return
-        unregisterUsbReceiver()
         val sensor = fingerprintSensor
         fingerprintSensor = null
         try {
@@ -771,7 +806,7 @@ class ZkFingerUnlockManager(
         enrollmentSamples.clear()
         isEnrolling = false
         releaseSession(this)
-        stopBackgroundThread()
+        sessionConfig = null
     }
 
     private fun findSupportedDevice(): UsbDevice? {
@@ -805,6 +840,12 @@ class ZkFingerUnlockManager(
         usbReceiver = null
     }
 
+    private fun clearPendingUsbPermission() {
+        pendingUsbPermission?.set(true)
+        pendingUsbPermission = null
+        unregisterUsbReceiver()
+    }
+
     private fun nextEnrollmentTag(): String {
         val existing = getEnrolls().toSet()
         for (i in 1..999) {
@@ -815,6 +856,7 @@ class ZkFingerUnlockManager(
     }
 
     private fun onAuthenticationError(code: Int, msg: CharSequence?) {
+        if (!captureSession.isActive) return
         val callback = authCallback
         callbackHandler.post {
             callback?.onAuthenticationError(code, msg)
@@ -822,6 +864,7 @@ class ZkFingerUnlockManager(
     }
 
     private fun postHelp(msg: CharSequence?) {
+        if (!captureSession.isActive) return
         val callback = authCallback
         callbackHandler.post {
             callback?.onAuthenticationHelp(CUSTOM_BIOMETRIC_ACQUIRED_PARTIAL, msg)
@@ -829,13 +872,18 @@ class ZkFingerUnlockManager(
     }
 
     private fun onAuthenticationSucceeded() {
+        if (!captureSession.isActive) return
         val callback = authCallback
+        val signal = cancellationSignal
         callbackHandler.post {
-            callback?.onAuthenticationSucceeded(AuthenticationResult(null))
+            if (signal?.isCanceled != true) {
+                callback?.onAuthenticationSucceeded(AuthenticationResult(null))
+            }
         }
     }
 
     private fun onAuthenticationFailed() {
+        if (!captureSession.isActive) return
         val callback = authCallback
         callbackHandler.post {
             callback?.onAuthenticationFailed()

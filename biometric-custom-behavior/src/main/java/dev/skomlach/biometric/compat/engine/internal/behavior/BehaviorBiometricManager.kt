@@ -32,7 +32,7 @@ class BehaviorBiometricManager(
             maxCaptureDurationMs = 30_000L
         )
 
-    private val sessionActive = AtomicBoolean(false)
+    private var sessionActive = AtomicBoolean(false)
     private var currentHandler: Handler = Handler(Looper.getMainLooper())
     private var resultRunnable: Runnable? = null
     private val prefs by lazy {
@@ -76,6 +76,7 @@ class BehaviorBiometricManager(
     override fun getEnrolls(): Collection<String> = store.templateNames()
 
     @Suppress("CyclomaticComplexMethod", "LongMethod", "ReturnCount")
+    @Synchronized
     override fun authenticate(
         crypto: CryptoObject?,
         flags: Int,
@@ -85,12 +86,14 @@ class BehaviorBiometricManager(
         extra: Bundle?
     ) {
         cancelActiveSession()
-        sessionActive.set(true)
+        val session = AtomicBoolean(true).also { sessionActive = it }
         currentHandler = handler ?: Handler(Looper.getMainLooper())
         cancel?.setOnCancelListener {
-            cancelActiveSession()
-            callback?.onAuthenticationCancelled()
+            if (session.compareAndSet(true, false)) {
+                callback?.onAuthenticationCancelled()
+            }
         }
+        if (!session.get()) return
 
         val lockoutError = getLockoutError()
         if (lockoutError != null) {
@@ -308,8 +311,9 @@ class BehaviorBiometricManager(
         crypto: CryptoObject?,
         helpMessage: CharSequence
     ) {
+        val session = sessionActive
         resultRunnable = Runnable {
-            if (sessionActive.compareAndSet(true, false)) {
+            if (session.compareAndSet(true, false)) {
                 callback?.onAuthenticationHelp(CUSTOM_BIOMETRIC_ACQUIRED_GOOD, helpMessage)
                 callback?.onAuthenticationSucceeded(AuthenticationResult(crypto))
             }

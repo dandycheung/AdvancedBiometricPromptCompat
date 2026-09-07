@@ -37,7 +37,7 @@ class VoiceBiometricManager(
         )
     override val trustedCaptureForAuthentication: Boolean = true
 
-    private val sessionActive = AtomicBoolean(false)
+    private var sessionActive = AtomicBoolean(false)
     private var lastProbeFingerprint: Long? = null
     private var lastProbeAtMs: Long = 0L
     private val prefs by lazy {
@@ -87,6 +87,7 @@ class VoiceBiometricManager(
 
     override fun getEnrolls(): Collection<String> = store.templateNames()
 
+    @Synchronized
     override fun authenticate(
         crypto: CryptoObject?,
         flags: Int,
@@ -96,11 +97,13 @@ class VoiceBiometricManager(
         extra: Bundle?
     ) {
         cancelActiveSession()
-        sessionActive.set(true)
+        val session = AtomicBoolean(true).also { sessionActive = it }
         cancel?.setOnCancelListener {
-            cancelActiveSession()
-            callback?.onAuthenticationCancelled()
+            if (session.compareAndSet(true, false)) {
+                callback?.onAuthenticationCancelled()
+            }
         }
+        if (!session.get()) return
 
         val lockoutError = getLockoutError()
         if (lockoutError != null) {
