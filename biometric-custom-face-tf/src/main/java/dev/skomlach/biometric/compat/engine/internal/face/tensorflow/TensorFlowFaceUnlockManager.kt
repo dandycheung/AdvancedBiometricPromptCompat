@@ -489,7 +489,10 @@ class TensorFlowFaceUnlockManager(
     override fun hasEnrolledBiometric(): Boolean {
         val json = getProtectedPreferences(TFLiteObjectDetectionAPIModel.STORAGE_NAME)
             .getString(REGISTERED_TEMPLATES_PREF_KEY, null)
-        return hasRegisteredTemplates(json)
+        return hasUsableFaceEnrollment(
+            json,
+            dev.skomlach.common.permissions.PermissionUtils.INSTANCE.hasSelfPermissions(Manifest.permission.CAMERA)
+        )
     }
     override fun getManagers(): Set<Any> = emptySet()
 

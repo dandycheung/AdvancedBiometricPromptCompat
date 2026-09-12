@@ -45,7 +45,7 @@ import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.BundleBuilder
 import dev.skomlach.biometric.compat.CryptoSecurityLevel
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptRegistry
-import dev.skomlach.biometric.compat.custom.BackgroundSoftwareBiometricPromptFactory
+import dev.skomlach.biometric.compat.custom.supportsBackgroundPreparation
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptDelegate
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptHost
 import dev.skomlach.biometric.compat.custom.SoftwarePromptStatus
@@ -210,6 +210,9 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
     @Volatile private var parallelCapture: ParallelSoftwareCapture? = null
     private val parallelDelegates = java.util.concurrent.CopyOnWriteArrayList<SoftwareBiometricPromptDelegate>()
     private var feedbackToast: android.widget.Toast? = null
+    private val feedbackThrottle = SoftwareFeedbackThrottle()
+    private var feedbackMessage: String? = null
+    private var pendingFeedback: Runnable? = null
     private val authFinished: MutableMap<BiometricType?, AuthResult> =
         HashMap<BiometricType?, AuthResult>()
 
@@ -459,6 +462,7 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
         d("BiometricPromptApi28Impl.authenticate():")
         legacySessionOwner = Any()
         authSessionToken = authSessionState.begin()
+        feedbackThrottle.reset()
         callbackDispatchSessionToken.set(-1L)
         authErrorTimestamp.set(0L)
         pendingPromptCryptoObject.set(null)
@@ -545,6 +549,10 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
             routeForType = builder::selectedRoute,
             requiresReadyExtrasBeforeAuthentication = { type ->
                 softwareEnrollTargetsAtStart.isNotEmpty() || requiresReadyExtrasBeforeAuthentication(type)
+            },
+            canPrepareInBackground = { type ->
+                dialog == null && SoftwareBiometricPromptRegistry.resolve(type)
+                    ?.supportsBackgroundPreparation(builder.enroll) == true
             }
         )
         d(
@@ -567,15 +575,8 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
         }
         onUiOpened()
         prompt?.let(::showSystemUi)
-        val backgroundTypes = remainingSecondaryTypes.filter { type ->
-            !builder.enroll && prompt != null && dialog == null &&
-                    builder.selectedRoute(type)?.provider == dev.skomlach.biometric.compat.BiometricProviderType.SOFTWARE &&
-                    SoftwareBiometricPromptRegistry.resolve(type)?.let {
-                        it.requiresReadyExtrasBeforeAuthentication && it is BackgroundSoftwareBiometricPromptFactory
-                    } == true
-        }
-        if (backgroundTypes.isNotEmpty()) {
-            startParallelCapture(backgroundTypes)
+        if (stagePlan.backgroundPreparationTypes.isNotEmpty()) {
+            startParallelCapture(stagePlan.backgroundPreparationTypes)
         }
         startLegacyAuth(stagePlan.legacyAuthTypes)
     }
@@ -591,6 +592,10 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
             }
             ExecutorHelper.postDelayed({
                 if (!authSessionState.owns(sessionToken) || legacySessionOwner !== owner) return@postDelayed
+                if (builder.enroll) {
+                    types.filter { it in parallelCapture?.types.orEmpty() }
+                        .forEach(builder::trackParallelEnrollment)
+                }
                 LegacyBiometric.authenticateInSession(
                     owner,
                     builder.getCryptographyPurpose(),
@@ -620,7 +625,7 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
                 SoftwareBiometricPromptHost(
                     context = builder.getContext().applicationContext,
                     builder = builder,
-                    enroll = false,
+                    enroll = builder.enroll,
                     rootView = null,
                     callbacks = object : SoftwareBiometricPromptHost.Callbacks {
                         override fun isPromptActive() = active()
@@ -664,6 +669,23 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
             it.onSoftwareStatus(SoftwarePromptStatus(message))
             return
         }
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (!feedbackThrottle.tryAcquire(now)) {
+            val changed = feedbackMessage != message.toString()
+            feedbackMessage = message.toString()
+            if (changed) feedbackToast?.setText(message)
+            if (pendingFeedback == null) {
+                val session = authSessionToken
+                pendingFeedback = Runnable {
+                    pendingFeedback = null
+                    if (authSessionState.owns(session)) feedbackMessage?.let(::showSoftwareFeedback)
+                }.also { ExecutorHelper.postDelayed(it, feedbackThrottle.remainingDelay(now)) }
+            }
+            return
+        }
+        pendingFeedback?.let(ExecutorHelper::removeCallbacks)
+        pendingFeedback = null
+        feedbackMessage = message.toString()
         feedbackToast?.cancel()
         feedbackToast = android.widget.Toast.makeText(
             builder.getContext().applicationContext, message, android.widget.Toast.LENGTH_LONG
@@ -827,6 +849,9 @@ class BiometricPromptApi28Impl(override val builder: BiometricPromptCompat.Build
         parallelDelegates.clear()
         feedbackToast?.cancel()
         feedbackToast = null
+        feedbackMessage = null
+        pendingFeedback?.let(ExecutorHelper::removeCallbacks)
+        pendingFeedback = null
         legacySessionOwner = Any()
         e("BiometricPromptApi28Impl.stopAuth():")
         LegacyBiometric.cancelAuthentication()

@@ -208,4 +208,55 @@ class Api28StartAuthPlanTest {
             )
         )
     }
+
+    @Test
+    fun `setup prepares face voice and ZK finger alongside the system prompt`() {
+        val software = listOf(BiometricType.BIOMETRIC_FACE, BiometricType.BIOMETRIC_VOICE, BiometricType.BIOMETRIC_FINGERPRINT)
+        val plan = planApi28StartAuthStage(
+            remainingPrimaryTypes = listOf(BiometricType.BIOMETRIC_IRIS),
+            remainingSecondaryTypes = software,
+            routeForType = { SelectedBiometricRoute(it, BiometricProviderType.SOFTWARE, false, emptyList()) },
+            requiresReadyExtrasBeforeAuthentication = { true },
+            canPrepareInBackground = { true }
+        )
+        assertTrue(plan.shouldShowSystemPrompt)
+        assertEquals(software, plan.backgroundPreparationTypes)
+        assertTrue(plan.legacyAuthTypes.isEmpty())
+    }
+
+    @Test
+    fun `UI dependent setup remains deferred without blocking background capture`() {
+        val software = listOf(BiometricType.BIOMETRIC_FACE, BiometricType.BIOMETRIC_VOICE)
+        val plan = planApi28StartAuthStage(
+            listOf(BiometricType.BIOMETRIC_FINGERPRINT), software,
+            { SelectedBiometricRoute(it, BiometricProviderType.SOFTWARE, false, emptyList()) },
+            { true }, { it == BiometricType.BIOMETRIC_FACE }
+        )
+        assertEquals(listOf(BiometricType.BIOMETRIC_FACE), plan.backgroundPreparationTypes)
+        assertTrue(plan.legacyAuthTypes.isEmpty())
+    }
+
+    @Test
+    fun `authentication starts face and finger engines once while voice prepares`() {
+        val software = listOf(BiometricType.BIOMETRIC_FACE, BiometricType.BIOMETRIC_FINGERPRINT, BiometricType.BIOMETRIC_VOICE)
+        val plan = planApi28StartAuthStage(
+            listOf(BiometricType.BIOMETRIC_IRIS), software,
+            { SelectedBiometricRoute(it, BiometricProviderType.SOFTWARE, false, emptyList()) },
+            { it == BiometricType.BIOMETRIC_VOICE }, { true }
+        )
+        assertEquals(software.take(2), plan.legacyAuthTypes)
+        assertEquals(listOf(BiometricType.BIOMETRIC_VOICE), plan.backgroundPreparationTypes)
+    }
+
+    @Test
+    fun `legacy only setup uses the existing dialog instead of a second preparation`() {
+        val plan = planApi28StartAuthStage(
+            emptyList(), listOf(BiometricType.BIOMETRIC_VOICE),
+            { SelectedBiometricRoute(it, BiometricProviderType.SOFTWARE, false, emptyList()) },
+            { true }, { true }
+        )
+        assertFalse(plan.shouldShowSystemPrompt)
+        assertEquals(listOf(BiometricType.BIOMETRIC_VOICE), plan.legacyAuthTypes)
+        assertTrue(plan.backgroundPreparationTypes.isEmpty())
+    }
 }

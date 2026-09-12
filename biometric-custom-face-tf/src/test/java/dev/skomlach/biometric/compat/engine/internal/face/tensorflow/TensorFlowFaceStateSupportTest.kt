@@ -6,6 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TensorFlowFaceStateSupportTest {
+    @Test fun revokedPermissionHidesEnrollmentWithoutDeletingTemplates() {
+        val templates = """{"face1":{"id":"1"}}"""
+        assertTrue(hasUsableFaceEnrollment(templates, true))
+        assertFalse(hasUsableFaceEnrollment(templates, false))
+        assertTrue(hasRegisteredTemplates(templates))
+        assertTrue(hasUsableFaceEnrollment(templates, true))
+        assertFalse(hasUsableFaceEnrollment("{}", true))
+    }
+
 
     @Test
     fun countRegisteredTemplatesReturnsZeroForMissingOrEmptyJson() {

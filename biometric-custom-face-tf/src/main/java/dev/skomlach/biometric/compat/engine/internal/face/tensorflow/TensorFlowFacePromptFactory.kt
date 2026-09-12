@@ -3,12 +3,12 @@ package dev.skomlach.biometric.compat.engine.internal.face.tensorflow
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.custom.EngineBackedSoftwarePromptDelegate
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptDelegate
-import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptFactory
+import dev.skomlach.biometric.compat.custom.BackgroundSoftwareBiometricEnrollmentPromptFactory
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptHost
 import dev.skomlach.biometric.custom.face.tf.R
 import dev.skomlach.common.translate.LocalizationHelper
 
-class TensorFlowFacePromptFactory : SoftwareBiometricPromptFactory {
+class TensorFlowFacePromptFactory : BackgroundSoftwareBiometricEnrollmentPromptFactory {
     override val biometricType: BiometricType = BiometricType.BIOMETRIC_FACE
 
     override fun create(host: SoftwareBiometricPromptHost): SoftwareBiometricPromptDelegate {

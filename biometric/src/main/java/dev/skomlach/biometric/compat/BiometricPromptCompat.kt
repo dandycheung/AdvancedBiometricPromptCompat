@@ -43,6 +43,7 @@ import dev.skomlach.biometric.compat.engine.BiometricMethod
 import dev.skomlach.biometric.compat.engine.LegacyBiometric
 import dev.skomlach.biometric.compat.engine.LegacyBiometricInitListener
 import dev.skomlach.biometric.compat.engine.core.interfaces.BiometricModule
+import dev.skomlach.biometric.compat.engine.internal.EnrollmentRollbackScope
 import dev.skomlach.biometric.compat.engine.internal.SoftwareBiometricModule
 import dev.skomlach.biometric.compat.impl.BiometricPromptApi28Impl
 import dev.skomlach.biometric.compat.impl.BiometricPromptGenericImpl
@@ -889,6 +890,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
                 var hadUi = false
                 var rollbackEnrollment = false
+                var enrollmentSucceeded = false
                 val lastKnownOrientation = AtomicInteger(0)
                 val orientationLocked = AtomicBoolean(false)
                 val completion = AuthFlowCompletion(
@@ -907,9 +909,11 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                             builder.getActivity()?.requestedOrientation = lastKnownOrientation.get()
                         }
                         if (hadUi) appBackgroundDetector.detachListeners()
-                        if (rollbackEnrollment || (authCanceled.get() && builder.shouldRollbackEnrollSession())) {
-                            LegacyBiometric.rollbackLastEnrollInSoftwareModules()
-                        }
+                        builder.finishEnrollSession(
+                            succeeded = enrollmentSucceeded && !authCanceled.get(),
+                            rollbackConfirmed = rollbackEnrollment ||
+                                    (authCanceled.get() && builder.shouldRollbackEnrollSession())
+                        )
                         if (hadUi && !builder.isSilentAuthEnabled()) {
                             activityViewWatcher?.resetListeners()
                             builder.getActivity()?.let {
@@ -986,6 +990,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
                                 HardwareAccessImpl.getInstance(builder.getBiometricAuthRequest().withApi(BiometricApi.LEGACY_API)).updateBiometricEnrollChanged()
                             }
                         }.onFailure { BiometricLoggerImpl.e(it) }
+                        enrollmentSucceeded = true
                         completion.finish { callbackOuter.onSucceeded(delivered) }
                     }
 
@@ -1213,6 +1218,14 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         BiometricLoggerImpl.e("BiometricPromptCompat.checkPermissions")
         val permissionsMap = getUsedPermissionsMapForSelectedModules()
 
+        if (!builder.enroll) {
+            // A permission revoked after route selection must not start permission UI
+            // during authentication. Other selected routes remain independently usable.
+            disablePermissionDeniedModules(permissionsMap)
+            if (!failIfNoActiveBiometrics(callback, authFlowId) &&
+                !failIfNoEffectiveBiometrics(callback, authFlowId)) authTask()
+            return
+        }
         if (!PermissionUtils.INSTANCE.hasSelfPermissions(permissionsMap.flatMap { p -> p.second })) {
             BiometricLoggerImpl.d(
                 "BiometricPromptCompat.checkPermissions - request permissions $permissionsMap"
@@ -2058,6 +2071,7 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
         private var behaviorSignatureContainer = WeakReference<ViewGroup?>(null)
         private val confirmedEnrollTypes = LinkedHashSet<BiometricType>()
         private val rollbackEligibleEnrollTypes = LinkedHashSet<BiometricType>()
+        private val parallelEnrollments = LinkedHashMap<SoftwareBiometricModule, EnrollmentRollbackScope>()
         internal var voicePhrase: CharSequence? = null
         internal var isUIOpened = AtomicBoolean(false)
         private var observer: Observer<Activity?>? = Observer<Activity?> { context ->
@@ -2398,6 +2412,24 @@ class BiometricPromptCompat private constructor(private val builder: Builder) {
 
         internal fun getRollbackEligibleEnrollTypes(): Set<BiometricType> {
             return LinkedHashSet(rollbackEligibleEnrollTypes)
+        }
+
+        internal fun trackParallelEnrollment(type: BiometricType) {
+            if (!enroll) return
+            val module = selectedRoute(type)?.module as? SoftwareBiometricModule ?: return
+            parallelEnrollments.getOrPut(module) { module.trackEnrollmentRollback() }
+        }
+
+        internal fun finishEnrollSession(succeeded: Boolean, rollbackConfirmed: Boolean) {
+            // A parallel software result cannot commit templates before the whole setup succeeds.
+            // Staged ALL rollback retains its policy, scoped to modules confirmed by this run.
+            if (rollbackConfirmed) {
+                rollbackEligibleEnrollTypes.mapNotNull { selectedRoute(it)?.module as? SoftwareBiometricModule }
+                    .filterNot { it in parallelEnrollments }
+                    .forEach { it.rollbackLastEnroll() }
+            }
+            parallelEnrollments.forEach { (module, scope) -> module.finishEnrollmentRollback(scope, succeeded) }
+            parallelEnrollments.clear()
         }
 
         internal fun shouldRollbackEnrollSession(): Boolean {

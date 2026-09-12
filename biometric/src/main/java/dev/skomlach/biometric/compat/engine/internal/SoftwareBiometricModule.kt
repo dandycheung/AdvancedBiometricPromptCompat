@@ -90,6 +90,15 @@ class SoftwareBiometricModule(
     private val sessionGuard = SoftwareBiometricSessionGuard()
     private var activeSessionToken: SoftwareBiometricSessionToken? = null
     private var enrollBundle: Bundle? = null
+    private var enrollmentRollbackScope: EnrollmentRollbackScope? = null
+
+    internal fun trackEnrollmentRollback(): EnrollmentRollbackScope =
+        EnrollmentRollbackScope().also { enrollmentRollbackScope = it }
+
+    internal fun finishEnrollmentRollback(scope: EnrollmentRollbackScope, succeeded: Boolean) {
+        if (enrollmentRollbackScope === scope) enrollmentRollbackScope = null
+        scope.finish(succeeded)
+    }
     private var timeoutRunnable = Runnable {}
 
     init {
@@ -359,9 +368,16 @@ class SoftwareBiometricModule(
             ) == true
         ) {
             extras = Bundle(bundle ?: Bundle()).apply {
-                manager?.getEnrollBundle()?.let { putAll(it) }
+                // Provisional enrollment must never replace an existing template or use
+                // a null tag whose rollback means "remove all" in a software manager.
+                val provisionalName = enrollmentRollbackScope?.let { java.util.UUID.randomUUID().toString() }
+                manager?.getEnrollBundle(provisionalName)?.let { putAll(it) }
             }
             enrollBundle = extras
+            val enrolledExtras = extras
+            enrollmentRollbackScope?.record {
+                runCatching { manager?.remove(enrolledExtras) }.onFailure { e(it) }
+            }
         } else enrollBundle = null
 
         return extras
@@ -374,6 +390,11 @@ class SoftwareBiometricModule(
         private val listener: AuthenticationListener?,
         private val sessionToken: SoftwareBiometricSessionToken
     ) : AbstractSoftwareBiometricManager.AuthenticationCallback() {
+        private val callbackGate = SoftwareBiometricCallbackGate(
+            sessionGuard, sessionToken,
+            { cancellationSignal?.isCanceled != false || originalCancellationSignal?.isCanceled != false },
+            android.os.SystemClock::elapsedRealtime
+        )
         private var errorTs = 0L
         private val skipTimeout =
             context.resources.getInteger(android.R.integer.config_shortAnimTime)
@@ -488,6 +509,7 @@ class SoftwareBiometricModule(
         }
 
         override fun onAuthenticationHelp(helpMsgId: Int, helpString: CharSequence?) {
+            if (!callbackGate.tryHelp(helpString)) return
             d("$name.onAuthenticationHelp: $helpMsgId-$helpString")
             listener?.onHelp(helpString)
         }

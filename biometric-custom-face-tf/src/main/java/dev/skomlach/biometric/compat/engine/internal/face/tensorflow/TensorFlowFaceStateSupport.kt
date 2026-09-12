@@ -5,6 +5,9 @@ import org.json.JSONObject
 
 internal const val REGISTERED_TEMPLATES_PREF_KEY = "registered"
 
+internal fun hasUsableFaceEnrollment(jsonString: String?, cameraPermissionGranted: Boolean): Boolean =
+    cameraPermissionGranted && hasRegisteredTemplates(jsonString)
+
 internal fun hasRegisteredTemplates(jsonString: String?): Boolean {
     return countRegisteredTemplates(jsonString) > 0
 }

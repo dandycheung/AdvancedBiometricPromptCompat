@@ -60,4 +60,19 @@ class Api28EnrollmentCompletionTest {
         assertFalse(requiresSensorSpecificRoute(finger, false, false))
         assertFalse(requiresSensorSpecificRoute(face, true, true))
     }
+
+    @Test fun softwareFirstEnrollmentWaitsForSystemSuccessForAnyAndAll() {
+        for (confirmation in BiometricConfirmation.entries) {
+            val results = mapOf(voice to success)
+            assertEquals(AuthenticationCompletion.PENDING, resolveApi28Completion(
+                confirmation, listOf(face, voice), listOf(voice), null, results
+            ))
+            assertEquals(AuthenticationCompletion.SUCCEEDED, resolveApi28Completion(
+                confirmation, listOf(face, voice), listOf(voice), AuthResult.AuthResultState.SUCCESS, results
+            ))
+            assertEquals(AuthenticationCompletion.FAILED, resolveApi28Completion(
+                confirmation, listOf(face, voice), listOf(voice), AuthResult.AuthResultState.FATAL_ERROR, results
+            ))
+        }
+    }
 }

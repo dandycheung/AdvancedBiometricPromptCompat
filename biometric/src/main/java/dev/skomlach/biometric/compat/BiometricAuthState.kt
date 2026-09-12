@@ -160,7 +160,8 @@ internal fun shouldKeepSystemEnrollType(route: SelectedBiometricRoute?): Boolean
 
 internal data class Api28StartAuthStagePlan(
     val shouldShowSystemPrompt: Boolean,
-    val legacyAuthTypes: List<BiometricType>
+    val legacyAuthTypes: List<BiometricType>,
+    val backgroundPreparationTypes: List<BiometricType>
 )
 
 internal fun shouldShowInitialCompatDialog(
@@ -192,21 +193,20 @@ internal fun planApi28StartAuthStage(
     remainingPrimaryTypes: Collection<BiometricType>,
     remainingSecondaryTypes: Collection<BiometricType>,
     routeForType: (BiometricType) -> SelectedBiometricRoute?,
-    requiresReadyExtrasBeforeAuthentication: (BiometricType) -> Boolean
+    requiresReadyExtrasBeforeAuthentication: (BiometricType) -> Boolean,
+    canPrepareInBackground: (BiometricType) -> Boolean = { false }
 ): Api28StartAuthStagePlan {
     val shouldShowSystemPrompt = remainingPrimaryTypes.isNotEmpty()
-    val legacyAuthTypes = if (!shouldShowSystemPrompt) {
-        remainingSecondaryTypes.toList()
-    } else {
-        remainingSecondaryTypes.filterNot { type ->
-            val route = routeForType(type)
-            route?.provider == BiometricProviderType.SOFTWARE &&
+    val needsPreparation = if (shouldShowSystemPrompt) {
+        remainingSecondaryTypes.filter { type ->
+            routeForType(type)?.provider == BiometricProviderType.SOFTWARE &&
                     requiresReadyExtrasBeforeAuthentication(type)
         }
-    }
+    } else emptyList()
     return Api28StartAuthStagePlan(
         shouldShowSystemPrompt = shouldShowSystemPrompt,
-        legacyAuthTypes = legacyAuthTypes
+        legacyAuthTypes = remainingSecondaryTypes.filterNot { it in needsPreparation },
+        backgroundPreparationTypes = needsPreparation.filter(canPrepareInBackground)
     )
 }
 

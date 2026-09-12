@@ -3,12 +3,12 @@ package dev.skomlach.biometric.compat.engine.internal.fingerprint.zk
 import dev.skomlach.biometric.compat.BiometricType
 import dev.skomlach.biometric.compat.custom.EngineBackedSoftwarePromptDelegate
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptDelegate
-import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptFactory
+import dev.skomlach.biometric.compat.custom.BackgroundSoftwareBiometricEnrollmentPromptFactory
 import dev.skomlach.biometric.compat.custom.SoftwareBiometricPromptHost
 import dev.skomlach.biometric.zkfinger.R
 import dev.skomlach.common.translate.LocalizationHelper
 
-class ZkFingerPromptFactory : SoftwareBiometricPromptFactory {
+class ZkFingerPromptFactory : BackgroundSoftwareBiometricEnrollmentPromptFactory {
     override val biometricType: BiometricType = BiometricType.BIOMETRIC_FINGERPRINT
 
     override fun create(host: SoftwareBiometricPromptHost): SoftwareBiometricPromptDelegate {
